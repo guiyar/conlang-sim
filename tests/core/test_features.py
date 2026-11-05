@@ -1,6 +1,6 @@
 import pytest
 
-from conlang.core.features import Feature, FeatureCatalog, IncompatibleFeatures, Option
+from conlang.core.features import Constraint, Feature, FeatureCatalog, IncompatibleFeatures, Option
 from conlang.languages.austronesian.catalog import CATALOG, EXCLUDED_FEATURES
 
 
@@ -37,6 +37,48 @@ def test_small_fake_catalog_and_duplicate_rejection():
                 Feature("a", "test", (Option("y"),), meaning_bearing=False),
             )
         )
+
+
+def test_catalog_freezes_nested_feature_and_constraint_configuration():
+    applies = {"a": ["x"]}
+    constraint_if = {"a": ["x"]}
+    constraint_then = {"a": ["x", "y"]}
+    catalog = FeatureCatalog(
+        (
+            Feature("a", "test", (Option("x"), Option("y")), meaning_bearing=False),
+            Feature(
+                "b",
+                "test",
+                (Option("m"), Option("n")),
+                applies_if=applies,
+                meaning_bearing=False,
+            ),
+        ),
+        (
+            Constraint(
+                "valid_a",
+                constraint_if,
+                constraint_then,
+                "licensing",
+                "The accepted value is explicitly represented.",
+            ),
+        ),
+    )
+
+    applies["a"].append("y")
+    constraint_if["a"].append("y")
+    constraint_then["a"].clear()
+
+    assert catalog.features[1].applies_if["a"] == ("x",)
+    assert catalog.constraints[0].if_["a"] == ("x",)
+    assert catalog.constraints[0].then["a"] == ("x", "y")
+    with pytest.raises(TypeError):
+        catalog.features[1].applies_if["a"] = ("y",)
+    with pytest.raises(TypeError):
+        catalog.constraints[0].then["a"] = ("x",)
+    with pytest.raises(AttributeError, match="configuration is immutable"):
+        catalog.features = ()
+    assert catalog.sample(7, {"a": "y"})["b"] is None
 
 
 def test_excluded_features_are_not_catalogued():

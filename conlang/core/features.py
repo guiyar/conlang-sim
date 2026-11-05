@@ -2,12 +2,27 @@
 
 import math
 from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Mapping, TypeAlias
 
 from .ir import VALID_SOURCE_FIELDS
 from .seeds import item_rng
 
 VALID_STATUSES = frozenset({"attested", "adapted", "invented"})
 VALID_REASONS = frozenset({"licensing", "dependency", "exclusivity", "ambiguity"})
+FeatureCondition: TypeAlias = str | tuple[str, ...] | list[str] | set[str] | frozenset[str]
+
+
+def _freeze_conditions(conditions):
+    frozen = {}
+    for feature_id, values in conditions.items():
+        if isinstance(values, (tuple, list)):
+            frozen[feature_id] = tuple(values)
+        elif isinstance(values, (set, frozenset)):
+            frozen[feature_id] = tuple(sorted(values))
+        else:
+            frozen[feature_id] = values
+    return MappingProxyType(frozen)
 
 
 @dataclass(frozen=True)
@@ -18,24 +33,40 @@ class Option:
     status: str = "invented"
     note: str = ""
 
+    def __post_init__(self):
+        object.__setattr__(self, "attested_in", tuple(self.attested_in))
+
 
 @dataclass(frozen=True)
 class Feature:
     id: str
     group: str
     options: tuple[Option, ...]
-    applies_if: dict[str, object] | None = None
+    applies_if: Mapping[str, FeatureCondition] | None = None
     meaning_bearing: bool = True
     source_fields: tuple[str, ...] = ()
+
+    def __post_init__(self):
+        object.__setattr__(self, "options", tuple(self.options))
+        object.__setattr__(
+            self,
+            "applies_if",
+            None if self.applies_if is None else _freeze_conditions(self.applies_if),
+        )
+        object.__setattr__(self, "source_fields", tuple(self.source_fields))
 
 
 @dataclass(frozen=True)
 class Constraint:
     id: str
-    if_: dict[str, object]
-    then: dict[str, object]
+    if_: Mapping[str, FeatureCondition]
+    then: Mapping[str, FeatureCondition]
     reason: str
     justification: str
+
+    def __post_init__(self):
+        object.__setattr__(self, "if_", _freeze_conditions(self.if_))
+        object.__setattr__(self, "then", _freeze_conditions(self.then))
 
 
 class IncompatibleFeatures(ValueError):
@@ -53,12 +84,21 @@ class FeatureCatalog:
         language_id="feature-catalog",
         output_version=1,
     ):
+        self._validated = False
         self.features = tuple(features)
         self.constraints = tuple(constraints)
-        self.excluded_features = tuple(excluded_features)
+        self.excluded_features = tuple(
+            tuple(item) if isinstance(item, list) else item for item in excluded_features
+        )
         self.language_id = language_id
         self.output_version = output_version
         self.validate_catalog()
+        self._validated = True
+
+    def __setattr__(self, name, value):
+        if self.__dict__.get("_validated", False):
+            raise AttributeError("feature catalog configuration is immutable")
+        object.__setattr__(self, name, value)
 
     @staticmethod
     def _active(feature, assignment):
@@ -243,7 +283,7 @@ class FeatureCatalog:
             lines.append("Constraints:")
             for constraint in self.constraints:
                 lines.append(
-                    f"  {constraint.id}: {constraint.if_} -> {constraint.then}; "
+                    f"  {constraint.id}: {dict(constraint.if_)} -> {dict(constraint.then)}; "
                     f"reason={constraint.reason}; {constraint.justification}"
                 )
         return "\n".join(lines)
