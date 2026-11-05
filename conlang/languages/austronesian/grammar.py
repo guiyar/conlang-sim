@@ -747,7 +747,7 @@ class Realizer:
         for position, argument in enumerate(arguments):
             relation = "subject" if position == promoted else argument.relation
             words = self._np_words(argument.np, lexicon, rules)
-            is_core = relation in {"subject", "object", "indirect_object"}
+            is_core = relation in {"subject", "object"}
             is_personal = argument.np.kind == "pronoun"
             case_bearing_pivot = (
                 self.features["case_particles"] == "preposed"
@@ -786,34 +786,27 @@ class Realizer:
                     else:
                         words.append(pronoun_word)
 
+            # A dative-shifted recipient has no English preposition; it takes the "to" marker.
+            adposition = argument.preposition or ("to" if relation == "indirect_object" else None)
+            marker = (
+                self._lexical_word(
+                    adposition, "ADP", lexicon, sources=(argument.preposition_index,)
+                )
+                if adposition and relation in {"oblique", "indirect_object"}
+                else None
+            )
             if not cliticized and self.features["case_particles"] == "preposed":
                 case = self._case(alignment, argument, clause, relation)
                 if case:
                     words.insert(0, self._function_word(case))
-                elif argument.preposition and argument.relation in {"oblique", "indirect_object"}:
-                    words.insert(
-                        0,
-                        self._lexical_word(
-                            argument.preposition,
-                            "ADP",
-                            lexicon,
-                            sources=(argument.preposition_index,),
-                        ),
-                    )
-            elif (
-                not cliticized
-                and argument.preposition
-                and argument.relation in {"oblique", "indirect_object"}
-            ):
-                words.insert(
-                    0,
-                    self._lexical_word(
-                        argument.preposition,
-                        "ADP",
-                        lexicon,
-                        sources=(argument.preposition_index,),
-                    ),
-                )
+                    if relation == "indirect_object" and argument.preposition_index is not None:
+                        for token in clause.source_tokens:
+                            if token.index == argument.preposition_index:
+                                self._dispose(token, "absorbed", "recipient marked by case")
+                elif marker is not None:
+                    words.insert(0, marker)
+            elif not cliticized and marker is not None:
+                words.insert(0, marker)
             argument_words.append((relation, words))
 
         subjects = [
@@ -942,7 +935,7 @@ class Realizer:
         if alignment == "symmetrical_voice":
             if relation == "subject":
                 return "NOM"
-            if relation in {"object", "indirect_object"} or argument.role == "agent":
+            if relation == "object" or argument.role == "agent":
                 return "GEN"
             return "OBL"
         if alignment == "ergative" and clause.transitivity and argument.role == "agent":

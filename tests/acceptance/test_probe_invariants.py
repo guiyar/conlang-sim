@@ -10,6 +10,7 @@ from probes import (
     PROFILE,
     dialect_translators,
     fresh,
+    glosses,
     make_translator,
     morphemes,
 )
@@ -222,3 +223,17 @@ def test_dropped_subject_clauses_keep_the_patient_a_patient(fixed):
 def test_imperative_without_marking_notes_it_at_info_level():
     result = make_translator(ROLE_DIALECTS[0]).translate("Eat the dog!")[0]
     assert any(is_info(rule) and "imperative" in rule for rule in result.rules)
+
+
+@pytest.mark.parametrize("name,translator", ALL, ids=IDS)
+def test_dative_shift_and_prepositional_recipients_are_marked_alike(name, translator):
+    shifted = translator.translate("She gave me the dog.")[0].words
+    prepositional = translator.translate("She gave the dog to me.")[0].words
+    assert sorted(glosses(shifted)) == sorted(glosses(prepositional)), name
+
+    def marker(words):
+        recipient = next(i for i, w in enumerate(words) if w.morphemes[0].gloss in {"P1", "P1SG"})
+        return words[recipient - 1].morphemes[0].gloss
+
+    assert marker(shifted) == marker(prepositional), name
+    assert marker(shifted) in {"TO", "OBL"}, name

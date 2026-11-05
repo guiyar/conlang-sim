@@ -235,7 +235,7 @@ For symmetrical voice, the argument with relation `subject` is the pivot, indepe
 | patient | PF |
 | other, including intransitive/equational subjects | AF |
 
-The pivot takes `NOM`; other core arguments and by-phrase agents take `GEN`; remaining obliques take `OBL`. Exactly one subject pivot is selected per clause. A case-bearing subject remains a free pronoun so its `NOM` is not lost to cliticization. Other core pronouns may cliticize without case particles; oblique pronouns remain free.
+The pivot takes `NOM`; other core arguments and by-phrase agents take `GEN`; remaining obliques take `OBL`. Exactly one subject pivot is selected per clause. A case-bearing subject remains a free pronoun so its `NOM` is not lost to cliticization. Subject and object pronouns may cliticize without case particles; recipient (indirect-object) and oblique pronouns remain free so they can carry a marker. A recipient takes the `to` adposition whether or not English used it (`gave him the dog` = `gave the dog to him`); symmetrical voice marks it `OBL` instead.
 
 TAM tables cover every combination of tense, perfect, and progressive, including `UNSPECIFIED`:
 
