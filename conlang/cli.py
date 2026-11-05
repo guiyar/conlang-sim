@@ -9,15 +9,17 @@ from conlang.core.features import IncompatibleFeatures
 from conlang.core.parser import parser_versions
 from conlang.core.registry import PLUGIN_FAILURES, discover_languages
 from conlang.core.render import render
+from conlang.core.results import is_info
 
 
-def _translate_and_print(translator, source, gloss, check):
+def _translate_and_print(translator, source, gloss, check, verbose=False):
     results = translator.translate(source, check=check)
     rendered = [render(result.words, gloss=gloss) for result in results]
     print(("\n\n" if gloss else "\n").join(rendered))
     for result in results:
         for rule in result.rules:
-            print(f"[rule] {rule}", file=sys.stderr)
+            if verbose or not is_info(rule):
+                print(f"[rule] {rule}", file=sys.stderr)
     return results
 
 
@@ -30,7 +32,7 @@ def _describe(profile, translator):
     )
 
 
-def _repl(profile, make_translator, seed, gloss, check):
+def _repl(profile, make_translator, seed, gloss, check, verbose=False):
     try:
         import readline  # noqa: F401  (enables line editing and history)
     except ImportError:
@@ -60,6 +62,9 @@ def _repl(profile, make_translator, seed, gloss, check):
             if command == "gloss":
                 gloss = not gloss
                 print(f"gloss {'on' if gloss else 'off'}", file=sys.stderr)
+            elif command == "rules":
+                verbose = not verbose
+                print(f"rules {'on' if verbose else 'off'}", file=sys.stderr)
             elif command == "check":
                 check = not check
                 print(f"check {'on' if check else 'off'}", file=sys.stderr)
@@ -82,14 +87,14 @@ def _repl(profile, make_translator, seed, gloss, check):
                 print(f"seed {seed}", file=sys.stderr)
             elif command == "help":
                 print(
-                    ":gloss  :check  :describe  :features  :seed [N]  :help  :quit",
+                    ":gloss  :rules  :check  :describe  :features  :seed [N]  :help  :quit",
                     file=sys.stderr,
                 )
             else:
                 print(f"unknown command :{command}; try :help", file=sys.stderr)
             continue
         try:
-            _translate_and_print(translator, line, gloss, check)
+            _translate_and_print(translator, line, gloss, check, verbose)
         except Exception as error:
             print(f"error: {error}", file=sys.stderr)
 
@@ -111,6 +116,7 @@ def main(argv=None):
     parser.add_argument("--uniform", action="store_true")
     parser.add_argument("--list-languages", action="store_true")
     parser.add_argument("--repl", action="store_true")
+    parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
     languages = discover_languages()
     if args.list_languages:
@@ -174,11 +180,11 @@ def main(argv=None):
         print(json.dumps(exported, sort_keys=True, indent=2))
     if args.sentence:
         source = " ".join(args.sentence)
-        results = _translate_and_print(translator, source, args.gloss, args.check)
+        results = _translate_and_print(translator, source, args.gloss, args.check, args.verbose)
     if args.lexicon:
         print(json.dumps(translator.lexicon.export(), sort_keys=True, indent=2))
     if args.repl:
-        _repl(profile, make_translator, args.seed, args.gloss, args.check)
+        _repl(profile, make_translator, args.seed, args.gloss, args.check, args.verbose)
         return 0
     if args.check:
         collisions = translator.lexicon.collisions()

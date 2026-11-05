@@ -61,10 +61,13 @@ python -m conlang.cli --features
 python -m conlang.cli --seed 42 --check "The door was opened by Mina."
 python -m conlang.cli --seed 42 --lexicon "The dog runs."
 python -m conlang.cli --list-languages
-python -m conlang.cli --seed 42 --repl  # loads the parser once; :help lists commands
+python -m conlang.cli --seed 42 --repl  # loads the parser once; :help lists commands (:gloss, :rules, ...)
+python -m conlang.cli --seed 42 --verbose "Alice left and Bob ran tomorrow."
 ```
 
 `--gloss` prints text, segmentation, and gloss lines, with blank lines between sentences. `--describe` prints the phoneme inventory, syllable probabilities, grammar settings, and function forms. `--features` lists option weights, attestations, statuses, source fields, and excluded features for the selected `--language` (default: `austronesian`). `--set FEATURE=OPTION` uses feature IDs and options from that same profile catalog; repeat it to fix multiple features. Incompatible assignments report their constraint IDs. `--uniform` ignores weights while preserving constraints. `--lexicon` emits stable-order JSON for words and morphemes actually used in this invocation. `--export-dialect` includes the seed, function forms, output version, and parser/model versions. `--check` reports IR audit status and lexical homophones.
+
+Rule messages go to stderr as `[rule] ...`, each at most once per result, at one of two levels. Notices are shown by default and cover lossy or unexpected behavior (the true rootless fallback, unparsed numerals, a failed IR audit). Informational notes, such as the embedded-clause simplification note and `residual token: X`, are hidden unless you pass `--verbose` or, in the REPL, toggle them with `:rules` (like `:gloss`). Verbless input (bare noun phrases, numerals, interjections) is realized with the dialect's grammar and produces no fallback notices. Verbosity does not change stdout, `--check` output, or exit codes.
 
 ## Architecture
 

@@ -46,9 +46,7 @@ class Translator:
         for sentence in sentences:
             try:
                 if sentence.clause.kind == "rootless":
-                    result = self._fallback_result(sentence.source_text, None, sentence)
-                    result.rules = list(sentence.rules) + result.rules
-                    results.append(result)
+                    results.append(self._fallback_result(sentence.source_text, None, sentence))
                     continue
                 audited = AuditedIR(sentence)
                 allowed = {
@@ -58,7 +56,7 @@ class Translator:
                     for source_field in feature.source_fields
                 }
                 words, rules = self.realizer.realize(audited.value, self.lexicon)
-                rules = list(sentence.rules) + list(rules)
+                rules = list(rules)
                 if check:
                     if audited.passes(allowed):
                         rules.append("IR audit passed.")
@@ -66,7 +64,9 @@ class Translator:
                         rules.append("IR audit failed: undeclared IR field read.")
                 self._surface_words(words)
                 self._record_output(words)
-                results.append(ClauseResult(sentence.source_text, words, rules, []))
+                results.append(
+                    ClauseResult(sentence.source_text, words, list(dict.fromkeys(rules)), [])
+                )
             except Exception as error:
                 results.append(self._fallback_result(sentence.source_text, error, sentence))
         return results
@@ -198,6 +198,5 @@ class Translator:
         note = "No verbal root; token-by-token conlang fallback used."
         if error is not None:
             note = f"Unexpected {type(error).__name__}; token-by-token conlang fallback used."
-        if sentence is not None and sentence.rules:
-            note += " " + " ".join(sentence.rules)
-        return ClauseResult(text, words, [note], [(0, len(text))])
+        rules = list(sentence.rules) if sentence is not None else []
+        return ClauseResult(text, words, list(dict.fromkeys([*rules, note])), [(0, len(text))])

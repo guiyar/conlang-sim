@@ -17,6 +17,7 @@ from .ir import (
     SentenceIR,
     SourceToken,
 )
+from .results import info
 from .roles import argument_role
 
 MODEL_NAME = "en_core_web_sm"
@@ -704,7 +705,9 @@ def parse(text):
             )
         if any(token.dep_ in {"relcl", "acl", "ccomp", "xcomp", "advcl", "conj"} for token in sent):
             rules.append(
-                "Embedded and coordinated clauses use profile grammar; relative-clause gaps are simplified."
+                info(
+                    "Embedded and coordinated clauses use profile grammar; relative-clause gaps are simplified."
+                )
             )
         sentences.append(
             SentenceIR(clause, sent.text, rules, [], list(source.values()), builder.numeral_spans)

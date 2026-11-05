@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 
 from conlang.core.ir import UNSPECIFIED
+from conlang.core.results import info
 from conlang.core.seeds import item_rng
 from conlang.core.words import Morpheme, Word
 
@@ -784,7 +785,7 @@ class Realizer:
                         )
                     )
                 self._dispose(token, "realized")
-                rules.append(f"residual token: {token.text}")
+                rules.append(info(f"residual token: {token.text}"))
         return sequence, rules
 
     def _apply_affix(self, word, name, position=None):
