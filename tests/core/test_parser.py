@@ -247,3 +247,10 @@ def test_negation_belongs_to_the_clause_it_modifies():
     for text in ("He didn't leave.", "He has not eaten.", "He never eats.", "Don't eat."):
         assert parse(text)[0].clause.polarity == "negative", text
     assert parse("He left.")[0].clause.polarity == "positive"
+
+
+def test_only_matrix_wh_words_make_a_question():
+    for text in ("I know where he went.", "The man who called left.", "She asked what he ate."):
+        assert parse(text)[0].clause.mood == "declarative", text
+    for text in ("Where did he go?", "Who left?", "What do you want?", "Which dog ate?"):
+        assert parse(text)[0].clause.mood == "interrogative", text

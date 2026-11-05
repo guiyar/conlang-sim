@@ -216,6 +216,17 @@ def _revision_clause_head(token):
     return token.pos_ == "VERB" or token.lemma_.lower() == "be" and token.pos_ in {"AUX", "VERB"}
 
 
+def _belongs_to(token, root):
+    """True when `root` is the nearest clause head above `token`."""
+    while token.head.i != token.i:
+        token = token.head
+        if token.i == root.i:
+            return True
+        if _revision_clause_head(token):
+            return False
+    return False
+
+
 def _revision_mood_tam_kind(root, sentence, main):
     children = list(root.children)
     voice = "passive" if any(child.dep_ == "nsubjpass" for child in children) else "active"
@@ -239,7 +250,9 @@ def _revision_mood_tam_kind(root, sentence, main):
     interrogative = main and (
         sentence.text.rstrip().endswith("?")
         or inversion
-        or any(token.tag_ in {"WP", "WRB", "WDT"} for token in sentence)
+        or any(
+            token.tag_ in {"WP", "WRB", "WDT"} and _belongs_to(token, root) for token in sentence
+        )
     )
     imperative = (
         main
