@@ -325,6 +325,14 @@ class _SentenceBuilder:
     def _proper_span(token):
         """First and last token of a multiword proper name headed by `token`, or None."""
         doc = token.doc
+        subtree = {item.i for item in token.subtree}
+        for ent in doc.ents:
+            if ent.start <= token.i < ent.end and ent.label_ in _NAME_ENTITIES:
+                start = ent.start
+                while start < ent.end and doc[start].pos_ == "DET":
+                    start += 1
+                if all(i in subtree for i in range(start, ent.end)) and start < ent.end - 1:
+                    return start, ent.end - 1
         parts = {
             c.i
             for c in token.children
@@ -335,14 +343,6 @@ class _SentenceBuilder:
             left -= 1
         while right + 1 in parts:
             right += 1
-        for ent in doc.ents:
-            if ent.start <= token.i < ent.end and ent.label_ in _NAME_ENTITIES:
-                start = ent.start
-                while start < ent.end and doc[start].pos_ != "PROPN":
-                    start += 1
-                low, high = min(left, start), max(right, ent.end - 1)
-                if all(doc[i].pos_ == "PROPN" for i in range(low, high + 1)):
-                    left, right = low, high
         return (left, right) if left != right else None
 
     def _indices(self, token):
@@ -706,6 +706,8 @@ class _SentenceBuilder:
         )
         post_modifiers = []
         for child in token.children:
+            if name_span is not None and name_span[0] <= child.i <= name_span[1]:
+                continue
             if child.dep_ == "prep":
                 pobj = next((item for item in child.children if item.dep_ in {"pobj", "obj"}), None)
                 post_modifiers.append(

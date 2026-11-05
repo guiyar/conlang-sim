@@ -296,6 +296,8 @@ def test_multiword_proper_names_are_one_literal(name, translator):
     assert sorted(_literals(result)) == ["John", "Mary", "New York"], name
     result = translator.translate("I saw Barack Obama in the United States.")[0]
     assert sorted(_literals(result)) == ["Barack Obama", "United States"], name
+    result = translator.translate("I saw Bank of America.")[0]
+    assert _literals(result) == ["Bank of America"], name
 
 
 def test_all_caps_keeps_the_original_spelling_in_the_ledger():
