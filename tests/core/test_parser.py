@@ -254,3 +254,20 @@ def test_only_matrix_wh_words_make_a_question():
         assert parse(text)[0].clause.mood == "declarative", text
     for text in ("Where did he go?", "Who left?", "What do you want?", "Which dog ate?"):
         assert parse(text)[0].clause.mood == "interrogative", text
+
+
+def test_currency_symbols_fuse_into_the_number_literal():
+    def literals(text):
+        argument = next(a for a in parse(text)[0].clause.arguments if a.relation == "object")
+        return argument.np.surface, [m.text for m in argument.np.modifiers if m.literal]
+
+    assert literals("It costs $5.")[0] == "$5"
+    assert literals("It costs € 5.")[0] == "€ 5"
+    assert literals("It costs 5 dollars.")[0] == "dollars"
+
+
+def test_degree_comes_from_morphology():
+    arguments = parse("The dog is bigger.")[0].clause.arguments
+    assert any(a.np.degree == "comparative" for a in arguments)
+    arguments = parse("The cat is the biggest.")[0].clause.arguments
+    assert any(a.np.degree == "superlative" for a in arguments)

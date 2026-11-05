@@ -187,12 +187,8 @@ _MODALS = frozenset({"can", "could", "may", "might", "must", "should", "shall"})
 
 
 def _degree(token):
-    return {
-        "JJR": "comparative",
-        "RBR": "comparative",
-        "JJS": "superlative",
-        "RBS": "superlative",
-    }.get(token.tag_, "none")
+    degree = token.morph.get("Degree")
+    return {"Cmp": "comparative", "Sup": "superlative"}.get(degree[0] if degree else "", "none")
 
 
 def _adverb(child):
@@ -320,7 +316,7 @@ class _SentenceBuilder:
     def _leading_symbols(token):
         symbols: list = []
         index = token.i - 1
-        while index >= 0 and token.doc[index].pos_ == "SYM":
+        while index >= 0 and token.doc[index].is_currency:
             symbols.insert(0, token.doc[index])
             index -= 1
         return symbols
@@ -592,7 +588,11 @@ class _SentenceBuilder:
         demonstrative_index = token.i if np_kind == "demonstrative_pronoun" else None
         for symbol in token.children:
             following = token.doc[symbol.i + 1] if symbol.i + 1 < len(token.doc) else None
-            attached = following is not None and any(char.isdigit() for char in following.text)
+            attached = (
+                following is not None
+                and any(char.isdigit() for char in following.text)
+                and symbol.i in {c.i for c in self._leading_symbols(following)}
+            )
             if symbol.pos_ == "SYM" and symbol.i < token.i and not attached:
                 modifiers.append(
                     Modifier(
