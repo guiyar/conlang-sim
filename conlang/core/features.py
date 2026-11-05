@@ -1,7 +1,8 @@
 """Generic constrained dialect-feature assignment."""
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
+
 from .ir import VALID_SOURCE_FIELDS
 from .seeds import item_rng
 
@@ -44,7 +45,14 @@ class IncompatibleFeatures(ValueError):
 
 
 class FeatureCatalog:
-    def __init__(self, features, constraints=(), excluded_features=(), language_id="feature-catalog", output_version=1):
+    def __init__(
+        self,
+        features,
+        constraints=(),
+        excluded_features=(),
+        language_id="feature-catalog",
+        output_version=1,
+    ):
         self.features = tuple(features)
         self.constraints = tuple(constraints)
         self.excluded_features = tuple(excluded_features)
@@ -54,7 +62,12 @@ class FeatureCatalog:
 
     @staticmethod
     def _active(feature, assignment):
-        return feature.applies_if is None or all(assignment.get(k) in v if isinstance(v, (tuple, list, set, frozenset)) else assignment.get(k) == v for k, v in feature.applies_if.items())
+        return feature.applies_if is None or all(
+            assignment.get(k) in v
+            if isinstance(v, (tuple, list, set, frozenset))
+            else assignment.get(k) == v
+            for k, v in feature.applies_if.items()
+        )
 
     def _violations(self, assignment, partial=False):
         violations = []
@@ -65,8 +78,18 @@ class FeatureCatalog:
                     continue
             if any(assignment.get(k) is None for k in keys):
                 continue
-            if all(assignment.get(k) in v if isinstance(v, (tuple, list, set, frozenset)) else assignment.get(k) == v for k, v in constraint.if_.items()):
-                if not all(assignment.get(k) in v if isinstance(v, (tuple, list, set, frozenset)) else assignment.get(k) == v for k, v in constraint.then.items()):
+            if all(
+                assignment.get(k) in v
+                if isinstance(v, (tuple, list, set, frozenset))
+                else assignment.get(k) == v
+                for k, v in constraint.if_.items()
+            ):
+                if not all(
+                    assignment.get(k) in v
+                    if isinstance(v, (tuple, list, set, frozenset))
+                    else assignment.get(k) == v
+                    for k, v in constraint.then.items()
+                ):
                     violations.append(constraint.id)
         return violations
 
@@ -88,12 +111,16 @@ class FeatureCatalog:
                 raise ValueError(f"phonological feature {feature.id} cannot declare source_fields")
             invalid_fields = set(feature.source_fields) - VALID_SOURCE_FIELDS
             if invalid_fields:
-                raise ValueError(f"invalid source_fields in {feature.id}: {', '.join(sorted(invalid_fields))}")
+                raise ValueError(
+                    f"invalid source_fields in {feature.id}: {', '.join(sorted(invalid_fields))}"
+                )
             if feature.applies_if:
                 for dep, value in feature.applies_if.items():
                     if dep not in ids[:index]:
                         raise ValueError(f"{feature.id} depends on non-earlier feature {dep}")
-                    accepted = value if isinstance(value, (tuple, list, set, frozenset)) else (value,)
+                    accepted = (
+                        value if isinstance(value, (tuple, list, set, frozenset)) else (value,)
+                    )
                     if not set(accepted) <= option_ids[dep]:
                         raise ValueError(f"invalid dependency option {dep}={value}")
         if len({c.id for c in self.constraints}) != len(self.constraints):
@@ -103,18 +130,25 @@ class FeatureCatalog:
                 raise ValueError(f"invalid constraint metadata: {constraint.id}")
             for mapping in (constraint.if_, constraint.then):
                 for fid, value in mapping.items():
-                    accepted = value if isinstance(value, (tuple, list, set, frozenset)) else (value,)
+                    accepted = (
+                        value if isinstance(value, (tuple, list, set, frozenset)) else (value,)
+                    )
                     if fid not in option_ids or not set(accepted) <= option_ids[fid]:
-                        raise ValueError(f"invalid reference in constraint {constraint.id}: {fid}={value}")
+                        raise ValueError(
+                            f"invalid reference in constraint {constraint.id}: {fid}={value}"
+                        )
         excluded_ids = {
-            item[0] if isinstance(item, (tuple, list)) else item
-            for item in self.excluded_features
+            item[0] if isinstance(item, (tuple, list)) else item for item in self.excluded_features
         }
         if any(feature.id in excluded_ids for feature in self.features):
             raise ValueError("excluded feature appears in catalog")
         for feature in self.features:
             for option in feature.options:
-                if option.status not in VALID_STATUSES or option.weight <= 0 or not math.isfinite(option.weight):
+                if (
+                    option.status not in VALID_STATUSES
+                    or option.weight <= 0
+                    or not math.isfinite(option.weight)
+                ):
                     raise ValueError(f"invalid option metadata: {feature.id}.{option.id}")
                 if not self._reachable(feature.id, option.id):
                     raise ValueError(f"unreachable option: {feature.id}.{option.id}")
@@ -153,7 +187,7 @@ class FeatureCatalog:
             feature = next((f for f in self.features if f.id == fid), None)
             if feature is None or value not in {o.id for o in feature.options}:
                 raise ValueError(f"unknown fixed feature option: {fid}={value}")
-        assignment = {}
+        assignment: dict[str, str | None] = {}
         violations = set()
 
         def visit(index):
@@ -168,7 +202,9 @@ class FeatureCatalog:
                 result = visit(index + 1)
                 assignment.pop(feature.id)
                 return result
-            options = [o for o in feature.options if feature.id not in fixed or o.id == fixed[feature.id]]
+            options = [
+                o for o in feature.options if feature.id not in fixed or o.id == fixed[feature.id]
+            ]
             rng = item_rng(seed, self.language_id, self.output_version, "feature", feature.id)
             pool = list(options)
             while pool:
@@ -196,7 +232,10 @@ class FeatureCatalog:
             lines.append(f"{feature.id} [{feature.group}] source_fields={fields}")
             for option in feature.options:
                 attestation = ", ".join(option.attested_in) or "none stated"
-                lines.append(f"  {option.id}: weight={option.weight:g}; {option.status}; attested_in={attestation}" + (f"; {option.note}" if option.note else ""))
+                lines.append(
+                    f"  {option.id}: weight={option.weight:g}; {option.status}; attested_in={attestation}"
+                    + (f"; {option.note}" if option.note else "")
+                )
         if self.excluded_features:
             lines.append("Excluded features:")
             lines.extend(f"  {fid}: {reason}" for fid, reason in self.excluded_features)

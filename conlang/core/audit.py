@@ -1,6 +1,7 @@
 """Track intermediate-representation field paths read during realization."""
 
-from dataclasses import fields, is_dataclass
+from dataclasses import is_dataclass
+
 from .ir import STRUCTURAL_FIELDS
 
 
@@ -46,20 +47,26 @@ def _wrap(value, path, reads):
 
 class AuditedIR:
     def __init__(self, ir):
-        self.read_paths = set()
+        self.read_paths: set[str] = set()
         self.value = _wrap(ir, "", self.read_paths)
 
     def passes(self, allowed_fields):
         allowed = set(allowed_fields)
         for path in self.read_paths:
-            if any(other.startswith(path + ".") or other.startswith(path + "[]") for other in self.read_paths if other != path):
+            if any(
+                other.startswith(path + ".") or other.startswith(path + "[]")
+                for other in self.read_paths
+                if other != path
+            ):
                 continue
             if path in STRUCTURAL_FIELDS:
                 continue
             normalized = path.replace("clause.links[].clause.", "clause.")
             normalized = normalized.replace("clause.links[].marker.", "source_token.")
             normalized = normalized.replace("clause.links[].marker", "clause_link.marker")
-            normalized = normalized.replace("clause.arguments[].np.source_tokens[].", "source_token.")
+            normalized = normalized.replace(
+                "clause.arguments[].np.source_tokens[].", "source_token."
+            )
             normalized = normalized.replace("clause.arguments[].source_tokens[].", "source_token.")
             normalized = normalized.replace("clause.arguments[].np.", "np.")
             normalized = normalized.replace("clause.arguments[].", "argument.")
@@ -74,6 +81,11 @@ class AuditedIR:
             normalized = normalized.replace("np.case", "np.pronoun.case")
             if normalized in STRUCTURAL_FIELDS:
                 continue
-            if not any(normalized == field or normalized.startswith(field + ".") or normalized.startswith(field + "[") for field in allowed):
+            if not any(
+                normalized == field
+                or normalized.startswith(field + ".")
+                or normalized.startswith(field + "[")
+                for field in allowed
+            ):
                 return False
         return True

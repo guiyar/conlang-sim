@@ -60,7 +60,12 @@ def test_probe_A2_short_roots_and_functions_on_reference_battery():
             for entry in entries
             if entry["category"] == "function"
         ]
-        if content and functions and sum(content) / len(content) <= 6 and sum(functions) / len(functions) <= 2.6:
+        if (
+            content
+            and functions
+            and sum(content) / len(content) <= 6
+            and sum(functions) / len(functions) <= 2.6
+        ):
             typical += 1
     assert typical / 150 >= 0.85
 
@@ -179,10 +184,16 @@ def test_probe_F2_tam_particle_immediately_precedes_verb_in_major_orders():
         ("SOV", "The dog ate the fish.", "EAT"),
         ("VSO", "The dog ate the fish.", "EAT"),
     ):
-        glosses = [word.gloss() for word in make_translator(clause_order=order).translate(sentence)[0].words]
+        glosses = [
+            word.gloss()
+            for word in make_translator(clause_order=order).translate(sentence)[0].words
+        ]
         verb_index = next(index for index, gloss in enumerate(glosses) if verb in gloss)
         assert verb_index > 0 and glosses[verb_index - 1] in {
-            "PAST", "PRESENT", "NONPAST", "FUTURE"
+            "PAST",
+            "PRESENT",
+            "NONPAST",
+            "FUTURE",
         }, (order, glosses)
 
 

@@ -1,6 +1,6 @@
+from conlang.core.base import Translator
 from conlang.core.registry import discover_languages
 from conlang.core.seeds import item_rng
-from conlang.core.base import Translator
 
 
 def test_five_thousand_roots_and_words_are_phonotactically_valid():
@@ -20,9 +20,21 @@ def test_five_thousand_roots_and_words_are_phonotactically_valid():
 
 def test_tam_tables_are_total_and_unspecified_is_deterministic():
     from conlang.languages.austronesian.grammar import tam_category
+
     for tense in ("past", "present", "future", "UNSPECIFIED"):
         for perfect in (False, True):
             for progressive in (False, True):
-                assert tam_category("tense3", tense, perfect, progressive) in {"past", "present", "future"}
-                assert tam_category("past_nonpast", tense, perfect, progressive) in {"past", "nonpast"}
-                assert tam_category("aspect3", tense, perfect, progressive) in {"contemplated", "perfective", "imperfective"}
+                assert tam_category("tense3", tense, perfect, progressive) in {
+                    "past",
+                    "present",
+                    "future",
+                }
+                assert tam_category("past_nonpast", tense, perfect, progressive) in {
+                    "past",
+                    "nonpast",
+                }
+                assert tam_category("aspect3", tense, perfect, progressive) in {
+                    "contemplated",
+                    "perfective",
+                    "imperfective",
+                }

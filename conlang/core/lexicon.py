@@ -4,7 +4,9 @@ from .seeds import item_rng
 
 
 class Lexicon:
-    def __init__(self, seed, language_id, output_version, phonology, shape_for_pos=None, closed_forms=None):
+    def __init__(
+        self, seed, language_id, output_version, phonology, shape_for_pos=None, closed_forms=None
+    ):
         self.seed = seed
         self.language_id = language_id
         self.output_version = output_version
@@ -46,8 +48,12 @@ class Lexicon:
                     self.function_forms.add(form)
                     self.record(form, lemma.upper(), lemma, pos, "function")
                     return form
-            fallback = item_rng(self.seed, self.language_id, self.output_version, "fn", f"{lemma}/{pos}:fallback")
-            form = self.phonology.make_root(fallback, lemma, pos, shape="function") + self.phonology.make_syllable(fallback, shape="function")
+            fallback = item_rng(
+                self.seed, self.language_id, self.output_version, "fn", f"{lemma}/{pos}:fallback"
+            )
+            form = self.phonology.make_root(
+                fallback, lemma, pos, shape="function"
+            ) + self.phonology.make_syllable(fallback, shape="function")
             self.closed_forms[key] = form
             self.function_forms.add(form)
             self.record(form, lemma.upper(), lemma, pos, "function")
@@ -63,8 +69,12 @@ class Lexicon:
                 self.entries[key] = form
                 self.record(form, lemma.upper(), lemma, pos, "lexical")
                 return form
-        fallback = item_rng(self.seed, self.language_id, self.output_version, "lex", f"{lemma}/{pos}:fallback")
-        form = self.phonology.make_root(fallback, lemma, pos, shape=shape) + self.phonology.make_syllable(fallback, shape="function")
+        fallback = item_rng(
+            self.seed, self.language_id, self.output_version, "lex", f"{lemma}/{pos}:fallback"
+        )
+        form = self.phonology.make_root(
+            fallback, lemma, pos, shape=shape
+        ) + self.phonology.make_syllable(fallback, shape="function")
         self.entries[key] = form
         self.record(form, lemma.upper(), lemma, pos, "lexical")
         return form
@@ -73,7 +83,7 @@ class Lexicon:
         return [self._export_entries[key] for key in sorted(self._export_entries)]
 
     def collisions(self):
-        reverse = {}
+        reverse: dict[str, list[str]] = {}
         for (lemma, pos), form in sorted(self.entries.items()):
             reverse.setdefault(form, []).append(f"{lemma}/{pos}")
         return {form: keys for form, keys in reverse.items() if len(keys) > 1}

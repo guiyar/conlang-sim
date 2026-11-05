@@ -25,4 +25,6 @@ def pytest_report_header(config):
     return PARSER_PROBLEM
 
 
-pytestmark = pytest.mark.skipif(PARSER_PROBLEM is not None, reason=PARSER_PROBLEM or "parser model available")
+pytestmark = pytest.mark.skipif(
+    PARSER_PROBLEM is not None, reason=PARSER_PROBLEM or "parser model available"
+)

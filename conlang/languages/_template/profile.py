@@ -24,4 +24,6 @@ class TemplateProfile:
 
     @staticmethod
     def describe(features, parameters, **kwargs):
-        return f"Template dialect v{OUTPUT_VERSION}; choose a language ID and implement realization."
+        return (
+            f"Template dialect v{OUTPUT_VERSION}; choose a language ID and implement realization."
+        )

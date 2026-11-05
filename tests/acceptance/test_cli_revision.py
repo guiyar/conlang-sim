@@ -6,7 +6,21 @@ from conlang.cli import main
 
 
 def test_G1_set_flags_and_constraint_errors(capsys):
-    assert main(["--uniform", "--set", "alignment=plain", "--set", "case_particles=none", "--seed", "5", "The dog ran."]) == 0
+    assert (
+        main(
+            [
+                "--uniform",
+                "--set",
+                "alignment=plain",
+                "--set",
+                "case_particles=none",
+                "--seed",
+                "5",
+                "The dog ran.",
+            ]
+        )
+        == 0
+    )
     output = capsys.readouterr().out
     assert output.strip()
     with pytest.raises(SystemExit) as error:
@@ -25,7 +39,17 @@ def test_G1_unknown_option_shows_valid_feature_choices(capsys):
 def test_G2_describe_is_readable_and_includes_required_dialect_fields(capsys):
     main(["--seed", "4", "--describe"])
     output = capsys.readouterr().out
-    for label in ("Vowels:", "Consonants:", "Syllable template:", "Codas:", "Word order:", "Alignment:", "Article system:", "TAM system:", "Function morphs:"):
+    for label in (
+        "Vowels:",
+        "Consonants:",
+        "Syllable template:",
+        "Codas:",
+        "Word order:",
+        "Alignment:",
+        "Article system:",
+        "TAM system:",
+        "Function morphs:",
+    ):
         assert label in output
     assert "{" not in output
 
@@ -42,7 +66,7 @@ def test_G3_export_contains_seed_and_function_morphs(capsys):
 def test_G4_lexicon_flag_outputs_the_export_schema(capsys):
     main(["--seed", "12", "--lexicon", "Mina saw 42 birds."])
     output = capsys.readouterr().out
-    entries = json.loads(output[output.rfind("["):])
+    entries = json.loads(output[output.rfind("[") :])
     assert {"form", "gloss", "lemma", "pos", "category"} == set(entries[0])
     assert {entry["form"] for entry in entries if entry["category"] == "literal"} >= {"Mina", "42"}
 

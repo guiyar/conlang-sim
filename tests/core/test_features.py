@@ -1,6 +1,6 @@
 import pytest
 
-from conlang.core.features import Constraint, Feature, FeatureCatalog, IncompatibleFeatures, Option
+from conlang.core.features import Feature, FeatureCatalog, IncompatibleFeatures, Option
 from conlang.languages.austronesian.catalog import CATALOG, EXCLUDED_FEATURES
 
 
@@ -26,11 +26,17 @@ def test_conditional_features_are_none_when_inactive_and_fixed_value_fails():
 
 
 def test_small_fake_catalog_and_duplicate_rejection():
-    catalog = FeatureCatalog((Feature("a", "test", (Option("x"), Option("y")), meaning_bearing=False),))
+    catalog = FeatureCatalog(
+        (Feature("a", "test", (Option("x"), Option("y")), meaning_bearing=False),)
+    )
     assert catalog.sample(1)["a"] in {"x", "y"}
     with pytest.raises(ValueError, match="duplicate feature ID"):
-        FeatureCatalog((Feature("a", "test", (Option("x"),), meaning_bearing=False),
-                        Feature("a", "test", (Option("y"),), meaning_bearing=False)))
+        FeatureCatalog(
+            (
+                Feature("a", "test", (Option("x"),), meaning_bearing=False),
+                Feature("a", "test", (Option("y"),), meaning_bearing=False),
+            )
+        )
 
 
 def test_excluded_features_are_not_catalogued():
@@ -39,7 +45,9 @@ def test_excluded_features_are_not_catalogued():
 
 
 def test_catalog_rejects_an_excluded_feature_id():
-    excluded = Feature("excluded_feature", "morphology", (Option("x"),), source_fields=("clause.kind",))
+    excluded = Feature(
+        "excluded_feature", "morphology", (Option("x"),), source_fields=("clause.kind",)
+    )
     with pytest.raises(ValueError, match="excluded feature appears"):
         FeatureCatalog((excluded,), excluded_features=(("excluded_feature", "not derivable"),))
 
@@ -53,12 +61,12 @@ def test_uniform_sampling_co_realizes_every_logically_allowed_option_pair():
             left_value = assignment[left.id]
             if left_value is None:
                 continue
-            for right in features[left_index + 1:]:
+            for right in features[left_index + 1 :]:
                 right_value = assignment[right.id]
                 if right_value is not None:
                     observed.add((left.id, left_value, right.id, right_value))
     for left_index, left in enumerate(features):
-        for right in features[left_index + 1:]:
+        for right in features[left_index + 1 :]:
             for left_option in left.options:
                 for right_option in right.options:
                     fixed = {left.id: left_option.id, right.id: right_option.id}
@@ -78,7 +86,9 @@ def _pair_is_possible(left, right, fixed):
         if not all(key in fixed for key in constraint.if_):
             continue
         if not all(
-            fixed[key] in value if isinstance(value, (tuple, list, set, frozenset)) else fixed[key] == value
+            fixed[key] in value
+            if isinstance(value, (tuple, list, set, frozenset))
+            else fixed[key] == value
             for key, value in constraint.if_.items()
         ):
             continue

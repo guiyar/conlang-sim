@@ -11,14 +11,24 @@ class Translator:
         self.profile = profile
         self.seed = seed
         self.features = profile.catalog.sample(seed, fixed=fixed, uniform=uniform)
-        self.phonology = profile.phonology_class(self.features, seed, profile.language_id, profile.output_version)
+        self.phonology = profile.phonology_class(
+            self.features, seed, profile.language_id, profile.output_version
+        )
         self.realizer = profile.realizer_class(
-            self.features, self.phonology, seed, profile.language_id, profile.output_version,
+            self.features,
+            self.phonology,
+            seed,
+            profile.language_id,
+            profile.output_version,
             closed_class=getattr(profile, "closed_class", ()),
         )
         self.lexicon = Lexicon(
-            seed, profile.language_id, profile.output_version, self.phonology,
-            shape_for_pos=getattr(profile, "word_shape", None), closed_forms=self.realizer.closed_forms,
+            seed,
+            profile.language_id,
+            profile.output_version,
+            self.phonology,
+            shape_for_pos=getattr(profile, "word_shape", None),
+            closed_forms=self.realizer.closed_forms,
         )
         self.lexicon.register_function_forms(self.realizer.function_forms())
 
@@ -74,14 +84,21 @@ class Translator:
                 form = "".join(morpheme.segments)
                 if morpheme.gloss in self.realizer.forms:
                     self.lexicon.record(
-                        form, morpheme.gloss, category="function",
+                        form,
+                        morpheme.gloss,
+                        category="function",
                     )
                 elif not word.literal and morpheme.kind == "root":
                     matching = next(
-                        ((lemma, pos, category) for (lemma, pos), category in [
-                            (key, "function" if key in self.lexicon.closed_forms else "lexical")
-                            for key in list(self.lexicon.entries) + list(self.lexicon.closed_forms)
-                        ] if lemma.upper() == morpheme.gloss),
+                        (
+                            (lemma, pos, category)
+                            for (lemma, pos), category in [
+                                (key, "function" if key in self.lexicon.closed_forms else "lexical")
+                                for key in list(self.lexicon.entries)
+                                + list(self.lexicon.closed_forms)
+                            ]
+                            if lemma.upper() == morpheme.gloss
+                        ),
                         None,
                     )
                     if matching is not None:
@@ -97,13 +114,18 @@ class Translator:
         if not source_tokens:
             try:
                 from .parser import _model, _revision_source_token
+
                 source_tokens = [_revision_source_token(token) for token in _model()(text)]
             except Exception:
                 source_tokens = []
         words = []
         punctuation = []
         for token in source_tokens:
-            if token.pos == "PUNCT" or token.text and not any(char.isalnum() for char in token.text):
+            if (
+                token.pos == "PUNCT"
+                or token.text
+                and not any(char.isalnum() for char in token.text)
+            ):
                 punctuation.append(token.text)
                 token.disposition = "absorbed"
                 token.disposition_reason = "punctuation"
@@ -115,16 +137,24 @@ class Translator:
             lemma = (token.lemma or token.text).lower()
             pos = token.pos or "X"
             form = self.lexicon.root(lemma, pos)
-            words.append(Word([Morpheme(tuple(self.phonology.segments(form)), lemma.upper(), "root")]))
+            words.append(
+                Word([Morpheme(tuple(self.phonology.segments(form)), lemma.upper(), "root")])
+            )
             token.disposition = "realized"
         if not source_tokens:
             for token in text.split():
-                if any(char.isdigit() for char in token) or not any(char.isalnum() for char in token):
+                if any(char.isdigit() for char in token) or not any(
+                    char.isalnum() for char in token
+                ):
                     words.append(Word([Morpheme((token,), token, "root")], literal=True))
                 else:
                     lemma = token.lower().strip(".,!?;:")
                     form = self.lexicon.root(lemma, "X")
-                    words.append(Word([Morpheme(tuple(self.phonology.segments(form)), lemma.upper(), "root")]))
+                    words.append(
+                        Word(
+                            [Morpheme(tuple(self.phonology.segments(form)), lemma.upper(), "root")]
+                        )
+                    )
         self._surface_words(words)
         self._record_output(words)
         note = "No verbal root; token-by-token conlang fallback used."

@@ -1,19 +1,41 @@
 import pytest
-
-from conlang.core.parser import parse, parser_versions
-from conlang.core.ir import UNSPECIFIED
 from conftest import PARSER_PROBLEM
 
-pytestmark = pytest.mark.skipif(PARSER_PROBLEM is not None, reason=PARSER_PROBLEM or "pinned parser unavailable")
+from conlang.core.parser import parse, parser_versions
+
+pytestmark = pytest.mark.skipif(
+    PARSER_PROBLEM is not None, reason=PARSER_PROBLEM or "pinned parser unavailable"
+)
 
 
-@pytest.mark.parametrize("text", [
-    "Alice sees Bob.", "Bob was seen by Alice.", "The window was broken.", "The window got broken.",
-    "They have eaten.", "They have been eating.", "We will go.", "We won't go.", "Did they leave?",
-    "Who left?", "Open the door.", "She is happy.", "She is at home.", "There is a problem.",
-    "I gave her a book.", "This dog is friendly.", "These are mine.", "You are ready.", "We are ready.",
-    "John's cup broke.", "A cup of tea is here.", "The person who called left.", "I think she left."
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Alice sees Bob.",
+        "Bob was seen by Alice.",
+        "The window was broken.",
+        "The window got broken.",
+        "They have eaten.",
+        "They have been eating.",
+        "We will go.",
+        "We won't go.",
+        "Did they leave?",
+        "Who left?",
+        "Open the door.",
+        "She is happy.",
+        "She is at home.",
+        "There is a problem.",
+        "I gave her a book.",
+        "This dog is friendly.",
+        "These are mine.",
+        "You are ready.",
+        "We are ready.",
+        "John's cup broke.",
+        "A cup of tea is here.",
+        "The person who called left.",
+        "I think she left.",
+    ],
+)
 def test_pinned_parser_fixtures_never_crash(text):
     result = parse(text)[0]
     assert result.source_text == text
@@ -41,7 +63,9 @@ def test_rootless_fragment_preserves_tokens():
 
 def test_dative_preposition_preserves_indirect_object_np():
     result = parse("Mina gave two books to you.")[0]
-    recipient = next(argument for argument in result.clause.arguments if argument.relation == "indirect_object")
+    recipient = next(
+        argument for argument in result.clause.arguments if argument.relation == "indirect_object"
+    )
     assert recipient.np.head == "you"
     assert recipient.np.kind == "pronoun"
     assert recipient.preposition == "to"
@@ -51,10 +75,16 @@ def test_voice_roles_tense_aspect_and_mood_derivations():
     active = parse("Alice sees Bob.")[0].clause
     assert active.voice == "active"
     assert active.transitivity
-    assert [(argument.relation, argument.role) for argument in active.arguments] == [("subject", "agent"), ("object", "patient")]
+    assert [(argument.relation, argument.role) for argument in active.arguments] == [
+        ("subject", "agent"),
+        ("object", "patient"),
+    ]
     passive = parse("Bob was seen by Alice.")[0].clause
     assert passive.voice == "passive"
-    assert [(argument.relation, argument.role) for argument in passive.arguments] == [("subject", "patient"), ("oblique", "agent")]
+    assert [(argument.relation, argument.role) for argument in passive.arguments] == [
+        ("subject", "patient"),
+        ("oblique", "agent"),
+    ]
     perfect = parse("They have eaten.")[0].clause
     progressive_perfect = parse("They have been eating.")[0].clause
     assert (perfect.perfect, perfect.progressive) == (True, False)
@@ -99,23 +129,96 @@ def test_coordinated_np_and_numeral_modifier_are_preserved():
     assert numeral.text == "Two"
 
 
-@pytest.mark.parametrize("text, tense, voice, mood, kind, arguments", [
-    ("Alice sees Bob.", "present", "active", "declarative", "verbal", [("subject", "agent"), ("object", "patient")]),
-    ("Bob was seen by Alice.", "past", "passive", "declarative", "verbal", [("subject", "patient"), ("oblique", "agent")]),
-    ("The window was broken.", "past", "passive", "declarative", "verbal", [("subject", "patient")]),
-    ("The window got broken.", "past", "passive", "declarative", "verbal", [("subject", "patient")]),
-    ("They have eaten.", "present", "active", "declarative", "verbal", [("subject", "other")]),
-    ("They have been eating.", "present", "active", "declarative", "verbal", [("subject", "other")]),
-    ("We will go.", "future", "active", "declarative", "verbal", [("subject", "other")]),
-    ("We won't go.", "future", "active", "declarative", "verbal", [("subject", "other")]),
-    ("Did they leave?", "past", "active", "interrogative", "verbal", [("subject", "other")]),
-    ("Who left?", "past", "active", "interrogative", "verbal", [("subject", "other")]),
-    ("Open the door.", "UNSPECIFIED", "active", "imperative", "verbal", [("object", "patient")]),
-    ("She is happy.", "present", "active", "declarative", "equational", [("subject", "other"), ("object", "other")]),
-    ("She is at home.", "present", "active", "declarative", "locative", [("subject", "other"), ("oblique", "other")]),
-    ("There is a problem.", "present", "active", "declarative", "existential", [("object", "other")]),
-    ("I gave her a book.", "past", "active", "declarative", "verbal", [("subject", "agent"), ("indirect_object", "other"), ("object", "patient")]),
-])
+@pytest.mark.parametrize(
+    "text, tense, voice, mood, kind, arguments",
+    [
+        (
+            "Alice sees Bob.",
+            "present",
+            "active",
+            "declarative",
+            "verbal",
+            [("subject", "agent"), ("object", "patient")],
+        ),
+        (
+            "Bob was seen by Alice.",
+            "past",
+            "passive",
+            "declarative",
+            "verbal",
+            [("subject", "patient"), ("oblique", "agent")],
+        ),
+        (
+            "The window was broken.",
+            "past",
+            "passive",
+            "declarative",
+            "verbal",
+            [("subject", "patient")],
+        ),
+        (
+            "The window got broken.",
+            "past",
+            "passive",
+            "declarative",
+            "verbal",
+            [("subject", "patient")],
+        ),
+        ("They have eaten.", "present", "active", "declarative", "verbal", [("subject", "other")]),
+        (
+            "They have been eating.",
+            "present",
+            "active",
+            "declarative",
+            "verbal",
+            [("subject", "other")],
+        ),
+        ("We will go.", "future", "active", "declarative", "verbal", [("subject", "other")]),
+        ("We won't go.", "future", "active", "declarative", "verbal", [("subject", "other")]),
+        ("Did they leave?", "past", "active", "interrogative", "verbal", [("subject", "other")]),
+        ("Who left?", "past", "active", "interrogative", "verbal", [("subject", "other")]),
+        (
+            "Open the door.",
+            "UNSPECIFIED",
+            "active",
+            "imperative",
+            "verbal",
+            [("object", "patient")],
+        ),
+        (
+            "She is happy.",
+            "present",
+            "active",
+            "declarative",
+            "equational",
+            [("subject", "other"), ("object", "other")],
+        ),
+        (
+            "She is at home.",
+            "present",
+            "active",
+            "declarative",
+            "locative",
+            [("subject", "other"), ("oblique", "other")],
+        ),
+        (
+            "There is a problem.",
+            "present",
+            "active",
+            "declarative",
+            "existential",
+            [("object", "other")],
+        ),
+        (
+            "I gave her a book.",
+            "past",
+            "active",
+            "declarative",
+            "verbal",
+            [("subject", "agent"), ("indirect_object", "other"), ("object", "patient")],
+        ),
+    ],
+)
 def test_pinned_parser_fixtures_assert_derivations(text, tense, voice, mood, kind, arguments):
     clause = parse(text)[0].clause
     assert (clause.tense, clause.voice, clause.mood, clause.kind) == (tense, voice, mood, kind)

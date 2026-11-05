@@ -21,6 +21,23 @@ python -m pip install https://github.com/explosion/spacy-models/releases/downloa
 
 There is no network access at runtime. The test configuration checks for spaCy 3.8.x and `en_core_web_sm` 3.8.0; if they are missing or mismatched it reports the exact model-install command and skips model-dependent tests. Run tests with `pytest`.
 
+## Development Checks
+
+The `.[dev]` extra installs Ruff (linting and formatting), mypy (static typing), Vulture (high-confidence dead-code detection), pytest, and pytest-cov. From an activated environment:
+
+```bash
+make format       # apply Ruff formatting to project code and tests
+make format-check # verify formatting without changing files
+make lint         # Ruff lint and import checks
+make typecheck    # mypy checks the conlang package; third-party stubs are skipped
+make deadcode     # Vulture reports findings at 80% confidence or higher
+make test         # full pytest suite
+make coverage     # pytest with a terminal coverage report
+make check        # formatting check, lint, typecheck, dead-code scan, and tests
+```
+
+The supplied root-level `acceptance_probe.py` is excluded from automatic formatting and lint fixes. Its key behaviors are covered by repository-owned cases in `tests/acceptance/test_probe_contracts.py`.
+
 ### Nix
 
 The flake provides Python 3.12, pytest, spaCy 3.8, and the SHA-256-pinned `en_core_web_sm` 3.8.0 wheel:

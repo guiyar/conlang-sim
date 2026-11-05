@@ -1,24 +1,40 @@
 from conlang.core.audit import AuditedIR
+from conlang.core.base import Translator
 from conlang.core.ir import Argument, Clause, NounPhrase, SentenceIR
 from conlang.core.registry import discover_languages
-from conlang.core.base import Translator
 from conlang.core.words import Morpheme, Word
 
 
 def test_austronesian_realization_audit_and_seed_stability():
     profile = discover_languages()["austronesian"]
-    source = SentenceIR(Clause(predicate="see", predicate_pos="VERB", tense="past", transitivity=True,
-                               arguments=[Argument("subject", "agent", NounPhrase("child", number="singular")),
-                                          Argument("object", "patient", NounPhrase("dog", number="plural"))]),
-                        "The child saw dogs.")
+    source = SentenceIR(
+        Clause(
+            predicate="see",
+            predicate_pos="VERB",
+            tense="past",
+            transitivity=True,
+            arguments=[
+                Argument("subject", "agent", NounPhrase("child", number="singular")),
+                Argument("object", "patient", NounPhrase("dog", number="plural")),
+            ],
+        ),
+        "The child saw dogs.",
+    )
     for seed in range(200):
         translator = Translator(profile, seed)
         audited = AuditedIR(source)
         words, _ = translator.realizer.realize(audited.value, translator.lexicon)
-        allowed = {field for feature in profile.catalog.features if feature.meaning_bearing and translator.features[feature.id] is not None for field in feature.source_fields}
+        allowed = {
+            field
+            for feature in profile.catalog.features
+            if feature.meaning_bearing and translator.features[feature.id] is not None
+            for field in feature.source_fields
+        }
         assert audited.passes(allowed)
         for word in words:
-            form = word.surface(translator.phonology.validate_surface, translator.phonology.epenthetic_vowel)
+            form = word.surface(
+                translator.phonology.validate_surface, translator.phonology.epenthetic_vowel
+            )
             assert translator.phonology.valid(translator.phonology.segments(form))
             assert translator.phonology.segments(form) == list(word.segments)
             assert len(word.segmented().split("-")) == len(word.gloss().split("-"))
@@ -33,7 +49,9 @@ def test_audit_rejects_undeclared_grammatical_read():
 
 def test_audit_rejects_new_meaning_bearing_ir_fields_without_declarations():
     source = SentenceIR(
-        Clause(arguments=[Argument("subject", "other", NounPhrase("dog", definiteness="definite"))]),
+        Clause(
+            arguments=[Argument("subject", "other", NounPhrase("dog", definiteness="definite"))]
+        ),
         "the dog",
     )
     audited = AuditedIR(source)
@@ -48,7 +66,12 @@ def test_audit_rejects_new_meaning_bearing_ir_fields_without_declarations():
 
 def test_audit_accepts_new_structural_ir_fields_without_feature_declarations():
     source = SentenceIR(
-        Clause(links=[], arguments=[Argument("subject", "other", NounPhrase("dog", pos="NOUN", numeral_value=5))]),
+        Clause(
+            links=[],
+            arguments=[
+                Argument("subject", "other", NounPhrase("dog", pos="NOUN", numeral_value=5))
+            ],
+        ),
         "dog",
     )
     audited = AuditedIR(source)

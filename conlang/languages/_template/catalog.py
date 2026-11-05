@@ -5,7 +5,9 @@ from conlang.core.features import Feature, FeatureCatalog, Option
 OUTPUT_VERSION = 1
 FEATURES = (
     Feature(
-        "vowel_inventory", "phonology", (Option("basic"), Option("expanded")),
+        "vowel_inventory",
+        "phonology",
+        (Option("basic"), Option("expanded")),
         meaning_bearing=False,
     ),
 )

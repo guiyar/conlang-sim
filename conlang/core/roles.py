@@ -1,5 +1,6 @@
 """Argument role derivation from English voice and dependency relation."""
 
+
 def argument_role(relation, voice, transitive):
     if relation == "by_phrase":
         return "agent"

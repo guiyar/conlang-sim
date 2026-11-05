@@ -3,7 +3,9 @@
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
-VALID_KINDS = frozenset({"root", "prefix", "suffix", "infix", "clitic", "particle", "reduplicant", "epenthetic"})
+VALID_KINDS = frozenset(
+    {"root", "prefix", "suffix", "infix", "clitic", "particle", "reduplicant", "epenthetic"}
+)
 
 
 @dataclass
@@ -29,7 +31,7 @@ class Word:
 
     @property
     def segments(self):
-        output = []
+        output: list[str] = []
         index = 0
         while index < len(self.morphemes):
             morpheme = self.morphemes[index]
@@ -81,21 +83,29 @@ class Word:
         if validator is not None:
             segments = validator(segments, self.notes, epenthetic_vowel)
         matcher = SequenceMatcher(a=original, b=segments, autojunk=False)
-        insertions = []
+        insertions: list[tuple[int, str]] = []
         for operation, start, _, target_start, target_end in matcher.get_opcodes():
             if operation == "insert":
                 insertions.extend((start, segment) for segment in segments[target_start:target_end])
         for position, segment in reversed(insertions):
-            layout = []
+            layout: list[tuple[int, int]] = []
             index = 0
             while index < len(self.morphemes):
                 morpheme = self.morphemes[index]
                 following = self.morphemes[index + 1] if index + 1 < len(self.morphemes) else None
                 if morpheme.kind == "root" and following is not None and following.kind == "infix":
                     infix_position = following.position if following.position is not None else 1
-                    layout.extend((index, local) for local in range(min(infix_position, len(morpheme.segments))))
+                    layout.extend(
+                        (index, local)
+                        for local in range(min(infix_position, len(morpheme.segments)))
+                    )
                     layout.extend((index + 1, local) for local in range(len(following.segments)))
-                    layout.extend((index, local) for local in range(min(infix_position, len(morpheme.segments)), len(morpheme.segments)))
+                    layout.extend(
+                        (index, local)
+                        for local in range(
+                            min(infix_position, len(morpheme.segments)), len(morpheme.segments)
+                        )
+                    )
                     index += 2
                 else:
                     layout.extend((index, local) for local in range(len(morpheme.segments)))
@@ -108,7 +118,9 @@ class Word:
             else:
                 continue
             target = self.morphemes[morpheme_index]
-            target.segments = target.segments[:local_index] + (segment,) + target.segments[local_index:]
+            target.segments = (
+                target.segments[:local_index] + (segment,) + target.segments[local_index:]
+            )
             if target.kind == "root" and morpheme_index + 1 < len(self.morphemes):
                 following = self.morphemes[morpheme_index + 1]
                 if following.kind == "infix" and local_index <= (following.position or 0):
@@ -125,7 +137,10 @@ class Word:
             if morpheme.kind == "root" and following is not None and following.kind == "infix":
                 position = following.position if following.position is not None else 1
                 part = (
-                    "".join(morpheme.segments[:position]) + "<" + "".join(following.segments) + ">"
+                    "".join(morpheme.segments[:position])
+                    + "<"
+                    + "".join(following.segments)
+                    + ">"
                     + "".join(morpheme.segments[position:])
                 )
                 parts.append(part)
