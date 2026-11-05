@@ -198,36 +198,11 @@ class FeatureCatalog:
         return self._find({target_id: target_option}, 0, {}) is not None
 
     def _find(self, fixed, index, assignment):
-        if index == len(self.features):
-            return assignment if not self._violations(assignment) else None
-        feature = self.features[index]
-        if not self._active(feature, assignment):
-            if feature.id in fixed:
-                return None
-            assignment[feature.id] = None
-            result = self._find(fixed, index + 1, assignment)
-            assignment.pop(feature.id)
-            return result
-        choices = [o.id for o in feature.options]
-        if feature.id in fixed:
-            choices = [fixed[feature.id]]
-        for value in choices:
-            assignment[feature.id] = value
-            if not self._violations(assignment, partial=True):
-                result = self._find(fixed, index + 1, assignment)
-                if result is not None:
-                    assignment.pop(feature.id)
-                    return result
-        assignment.pop(feature.id, None)
-        return None
+        result, _ = self._search(fixed, lambda feature, choices: choices, assignment, index)
+        return result
 
-    def sample(self, seed, fixed=None, uniform=False):
-        fixed = dict(fixed or {})
-        for fid, value in fixed.items():
-            feature = next((f for f in self.features if f.id == fid), None)
-            if feature is None or value not in {o.id for o in feature.options}:
-                raise ValueError(f"unknown fixed feature option: {fid}={value}")
-        assignment: dict[str, str | None] = {}
+    def _search(self, fixed, order_candidates, assignment=None, start_index=0):
+        assignment = {} if assignment is None else assignment
         violations = set()
 
         def visit(index):
@@ -242,25 +217,41 @@ class FeatureCatalog:
                 result = visit(index + 1)
                 assignment.pop(feature.id)
                 return result
-            options = [
-                o for o in feature.options if feature.id not in fixed or o.id == fixed[feature.id]
-            ]
+
+            choices = [option.id for option in feature.options]
+            if feature.id in fixed:
+                choices = [fixed[feature.id]]
+            for value in order_candidates(feature, choices):
+                assignment[feature.id] = value
+                if not self._violations(assignment, partial=True):
+                    result = visit(index + 1)
+                    if result is not None:
+                        assignment.pop(feature.id, None)
+                        return result
+                violations.update(self._violations(assignment, partial=True))
+            assignment.pop(feature.id, None)
+            return None
+
+        return visit(start_index), violations
+
+    def sample(self, seed, fixed=None, uniform=False):
+        fixed = dict(fixed or {})
+        for fid, value in fixed.items():
+            feature = next((f for f in self.features if f.id == fid), None)
+            if feature is None or value not in {o.id for o in feature.options}:
+                raise ValueError(f"unknown fixed feature option: {fid}={value}")
+
+        def order_candidates(feature, choices):
+            options = [option for option in feature.options if option.id in choices]
             rng = item_rng(seed, self.language_id, self.output_version, "feature", feature.id)
             pool = list(options)
             while pool:
                 weights = [1.0 if uniform else o.weight for o in pool]
                 choice = rng.choices(pool, weights=weights, k=1)[0]
+                yield choice.id
                 pool.remove(choice)
-                assignment[feature.id] = choice.id
-                found = visit(index + 1) if not self._violations(assignment, partial=True) else None
-                if found is not None:
-                    assignment.pop(feature.id, None)
-                    return found
-                violations.update(self._violations(assignment, partial=True))
-            assignment.pop(feature.id, None)
-            return None
 
-        result = visit(0)
+        result, violations = self._search(fixed, order_candidates)
         if result is None:
             raise IncompatibleFeatures(violations or [c.id for c in self.constraints])
         return result

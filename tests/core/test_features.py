@@ -81,6 +81,66 @@ def test_catalog_freezes_nested_feature_and_constraint_configuration():
     assert catalog.sample(7, {"a": "y"})["b"] is None
 
 
+def test_seeded_feature_search_preserves_candidate_order_and_rng_consumption():
+    catalog = FeatureCatalog(
+        (
+            Feature(
+                "alignment",
+                "test",
+                (
+                    Option("plain", 1),
+                    Option("active", 2),
+                    Option("ergative", 3),
+                    Option("sym", 2),
+                ),
+                meaning_bearing=False,
+            ),
+            Feature(
+                "voice",
+                "test",
+                (Option("none", 1), Option("mark", 2)),
+                applies_if={"alignment": ("active", "ergative", "sym")},
+                meaning_bearing=False,
+            ),
+            Feature("order", "test", (Option("svo", 1), Option("sov", 1)), meaning_bearing=False),
+        ),
+        (
+            Constraint(
+                "active_voice",
+                {"alignment": "active"},
+                {"voice": "mark"},
+                "dependency",
+                "Active alignment requires marked voice.",
+            ),
+            Constraint(
+                "ergative_voice",
+                {"alignment": "ergative"},
+                {"voice": "mark"},
+                "dependency",
+                "Ergative alignment requires marked voice.",
+            ),
+        ),
+        language_id="feature-golden",
+        output_version=1,
+    )
+
+    assert [catalog.sample(seed) for seed in (0, 7, 42)] == [
+        {"alignment": "sym", "voice": "none", "order": "svo"},
+        {"alignment": "ergative", "voice": "mark", "order": "svo"},
+        {"alignment": "plain", "voice": None, "order": "sov"},
+    ]
+    assert catalog.sample(7, {"alignment": "plain"}) == {
+        "alignment": "plain",
+        "voice": None,
+        "order": "svo",
+    }
+    assert catalog.sample(7, uniform=True) == {
+        "alignment": "ergative",
+        "voice": "mark",
+        "order": "svo",
+    }
+
+
 def test_excluded_features_are_not_catalogued():
     ids = {feature.id for feature in CATALOG.features}
     assert all(feature_id not in ids for feature_id, _ in EXCLUDED_FEATURES)
