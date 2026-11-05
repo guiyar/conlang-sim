@@ -2,7 +2,7 @@
 
 from .audit import AuditedIR
 from .lexicon import Lexicon
-from .parser import parse
+from .parser import numeral_value, parse
 from .results import ClauseResult
 
 
@@ -111,16 +111,49 @@ class Translator:
         from .words import Morpheme, Word
 
         source_tokens = sentence.source_tokens if sentence is not None else []
+        numeral_spans = list(sentence.numeral_spans) if sentence is not None else []
         if not source_tokens:
             try:
-                from .parser import _model, _revision_source_token
+                from .parser import fallback_source
 
-                source_tokens = [_revision_source_token(token) for token in _model()(text)]
+                source_tokens, numeral_spans = fallback_source(text)
             except Exception:
                 source_tokens = []
+        numerals = {}
+        for start, end in numeral_spans:
+            span = [
+                token
+                for token in source_tokens
+                if token.index is not None and start <= token.index < end
+            ]
+            value = numeral_value(token.text for token in span)
+            if value is not None:
+                numerals[start] = (span, value)
+        covered = {token.index for span, _ in numerals.values() for token in span}
         words = []
         punctuation = []
         for token in source_tokens:
+            if token.index in numerals:
+                span, value = numerals[token.index]
+                words.extend(self.realizer.numeral_sequence(value, self.lexicon))
+                for item in span:
+                    if item.pos == "CCONJ" and item.dep == "cc":
+                        item.disposition, item.disposition_reason = (
+                            "absorbed",
+                            "numeral conjunction",
+                        )
+                    elif item.pos == "PUNCT":
+                        item.disposition, item.disposition_reason = "absorbed", "punctuation"
+                    elif item.dep == "det":
+                        item.disposition, item.disposition_reason = (
+                            "absorbed",
+                            "numeral determiner",
+                        )
+                    else:
+                        item.disposition = "realized"
+                continue
+            if token.index in covered:
+                continue
             if (
                 token.pos == "PUNCT"
                 or token.text

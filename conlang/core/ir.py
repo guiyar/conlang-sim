@@ -106,6 +106,7 @@ IR_FIELD_JUSTIFICATIONS = MappingProxyType(
         "clause_link.source_tokens": "Linked clause tokens remain available for the source ledger.",
         "clause.links": "Embedded and coordinated clauses retain their source relations.",
         "sentence.source_tokens": "All sentence tokens remain available to the fallback ledger.",
+        "sentence.numeral_spans": "Parser-detected CARDINAL spans let the rootless fallback compose numerals.",
         "source_token.text": "Source spelling is needed for literal and residual realization.",
         "source_token.lemma": "Source lemmas support lexical identity and residual realization.",
         "source_token.pos": "Parser POS selects the profile-owned lexical word shape.",
@@ -234,3 +235,4 @@ class SentenceIR:
     rules: list = field(default_factory=list)
     fragments: list = field(default_factory=list)
     source_tokens: list = field(default_factory=list)
+    numeral_spans: list = field(default_factory=list)

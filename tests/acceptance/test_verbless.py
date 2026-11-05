@@ -264,3 +264,79 @@ def test_rootless_fallback_is_dialect_aware_for_determiners():
 def test_punctuation_only_input_still_uses_the_rootless_fallback():
     result = translate_one(Translator(PROFILE, "5"), "!!!")
     assert result.words == [] and result.fallback_spans
+
+
+NUMERALS = ("one hundred and one", "two hundred and fifty", "one thousand")
+
+
+def check_numerals(translator):
+    for text in NUMERALS:
+        bare = translate_one(translator, text, check=True)
+        assert pairs(bare.words) == expected_np(translator, text), text
+        assert "IR audit passed." in bare.rules
+        assert "AND" not in glosses(bare.words)
+        with_noun = translate_one(translator, f"{text} dogs")
+        assert "AND" not in glosses(with_noun.words)
+        numeral = pairs(translator.realizer.numeral_sequence(_value(text), translator.lexicon))
+        assert numeral == [p for p in pairs(with_noun.words) if p in numeral]
+    coordinated = glosses(translate_one(translator, "one hundred dogs and one cat").words)
+    assert coordinated.count("AND") == 1 and coordinated.count("ONE") == 1
+    assert coordinated.index("HUNDRED") < coordinated.index("AND") < coordinated.index("CAT")
+    literal = translate_one(translator, "101 dogs").words
+    assert "101" in [w.surface() for w in literal if w.literal]
+
+
+def _value(text):
+    from conlang.core.parser import numeral_value
+
+    return numeral_value([text])
+
+
+@pytest.mark.parametrize("fixed", MATRIX, ids=_label)
+def test_numerals_match_the_sentence_path_in_the_matrix(fixed):
+    check_numerals(Translator(PROFILE, "7", fixed=fixed))
+
+
+@pytest.mark.parametrize("seed", range(20))
+def test_numerals_match_the_sentence_path_across_seeds(seed):
+    check_numerals(Translator(PROFILE, str(seed)))
+
+
+def test_numeral_conjunction_is_absorbed_by_the_parse_not_realized():
+    for text in ("one hundred and one dogs", "two hundred and fifty dogs", "one hundred and one"):
+        tokens = parse(text)[0].source_tokens
+        conjunction = next(t for t in tokens if t.dep == "cc")
+        assert (conjunction.disposition, conjunction.disposition_reason) == (
+            "absorbed",
+            "numeral conjunction",
+        )
+    tokens = parse("one hundred dogs and one cat")[0].source_tokens
+    conjunction = next(t for t in tokens if t.dep == "cc")
+    assert conjunction.disposition is None
+
+
+def test_fallback_composes_cardinal_spans_and_absorbs_the_inner_and():
+    translator = Translator(PROFILE, "2026")
+    for text, value in (
+        ("very quickly two hundred and fifty", 250),
+        ("very quickly one hundred and one", 101),
+    ):
+        sentence = parse(text)[0]
+        assert sentence.clause.kind == "rootless"
+        result = translator._fallback_result(sentence.source_text, None, sentence)
+        numeral = pairs(translator.realizer.numeral_sequence(value, translator.lexicon))
+        assert pairs(result.words)[-len(numeral) :] == numeral
+        assert "AND" not in glosses(result.words)
+        conjunction = next(t for t in sentence.source_tokens if t.dep == "cc")
+        assert conjunction.disposition_reason == "numeral conjunction"
+        assert all(t.disposition is not None for t in sentence.source_tokens)
+    result = translator._fallback_result("very quickly one hundred and one", RuntimeError("x"))
+    assert glosses(result.words)[-2:] == ["HUNDRED", "ONE"]
+
+
+def test_fallback_keeps_unparseable_spans_token_by_token():
+    translator = Translator(PROFILE, "2026")
+    sentence = parse("very quickly 101")[0]
+    result = translator._fallback_result(sentence.source_text, None, sentence)
+    assert [w.surface() for w in result.words][-1] == "101"
+    assert result.words[-1].literal

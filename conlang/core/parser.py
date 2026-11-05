@@ -150,6 +150,13 @@ def _revision_number_value(tokens):
     return numeral_value(token.text for token in sorted(tokens, key=lambda item: item.i))
 
 
+def fallback_source(text):
+    """Source tokens and CARDINAL spans for text that never reached the sentence parser."""
+    doc = _model()(text)
+    spans = [(ent.start, ent.end) for ent in doc.ents if ent.label_ == "CARDINAL"]
+    return [_revision_source_token(token) for token in doc], spans
+
+
 def _revision_clause_head(token):
     if token.dep_ in {"aux", "auxpass"}:
         return False
@@ -216,9 +223,25 @@ class _SentenceBuilder:
         self.source = source
         self.clause_heads = {token for token in sent if _revision_clause_head(token)}
         self.cache = {}
+        self.numeral_spans = [(ent.start, ent.end) for ent in sent.ents if ent.label_ == "CARDINAL"]
+        self._absorb_numeral_conjunctions()
 
     def source_for(self, token):
         return self.source.get(token.i)
+
+    def _absorb_numeral_conjunctions(self):
+        """Absorb the "and" inside a parseable CARDINAL span ("one hundred and one")."""
+        doc = self.sent.doc
+        for start, end in self.numeral_spans:
+            if numeral_value(token.text for token in doc[start:end]) is None:
+                continue
+            for token in doc[start:end]:
+                if token.dep_ != "cc" or token.head.pos_ != "NUM" or token.i + 1 >= end:
+                    continue
+                if doc[token.i + 1].pos_ == "NUM":
+                    source = self.source[token.i]
+                    source.disposition = "absorbed"
+                    source.disposition_reason = "numeral conjunction"
 
     @staticmethod
     def _is_numeral_part(head, child):
@@ -428,8 +451,10 @@ class _SentenceBuilder:
         modifiers: list[Modifier] = []
         for child in sorted(token.children, key=lambda item: item.i):
             if child in number_tokens and child is not token:
-                if child.text.lower() not in {"a", "and"} and not any(
-                    m.kind == "numeral" for m in modifiers
+                if (
+                    child.text.lower() not in {"a", "and"}
+                    and np_kind != "number"
+                    and not any(m.kind == "numeral" for m in modifiers)
                 ):
                     numeral_text = " ".join(item.text for item in number_tokens)
                     modifiers.append(
@@ -479,6 +504,8 @@ class _SentenceBuilder:
                 )
             )
         for digit_token in digit_tokens:
+            if digit_token.i == token.i:
+                continue
             if not any(
                 modifier.text == digit_token.text and modifier.literal for modifier in modifiers
             ):
@@ -650,6 +677,7 @@ def parse(text):
                         [],
                         [],
                         list(source.values()),
+                        builder.numeral_spans,
                     )
                 )
                 continue
@@ -664,6 +692,7 @@ def parse(text):
                     ["No verbal or be root found; source tokens use conlang lexical fallback."],
                     fragment,
                     list(source.values()),
+                    builder.numeral_spans,
                 )
             )
             continue
@@ -677,5 +706,7 @@ def parse(text):
             rules.append(
                 "Embedded and coordinated clauses use profile grammar; relative-clause gaps are simplified."
             )
-        sentences.append(SentenceIR(clause, sent.text, rules, [], list(source.values())))
+        sentences.append(
+            SentenceIR(clause, sent.text, rules, [], list(source.values()), builder.numeral_spans)
+        )
     return sentences

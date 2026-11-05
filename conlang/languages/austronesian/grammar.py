@@ -398,6 +398,10 @@ class Realizer:
             names = numeral_words(value)
         return [self._root(name, "NUM", lexicon) for name in names]
 
+    def numeral_sequence(self, value, lexicon):
+        """Numeral words for a parsed value, as the noun-phrase path composes them."""
+        return self._number_words(value, lexicon, [])
+
     def _pronoun_label(self, np):
         return personal_pronoun_form(np.person, np.number, self.features["pronoun_number"])
 
