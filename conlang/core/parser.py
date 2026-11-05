@@ -13,11 +13,11 @@ from .ir import (
     Possessor,
     PostModifier,
     SentenceIR,
-    SourceToken,
 )
 from .parsing.english import EnglishParser
 from .parsing.grammar import GrammarAnalyzer
 from .parsing.numeral import is_number_word, numeral_value
+from .parsing.token_ledger import TokenLedger
 from .results import info
 from .roles import argument_role
 
@@ -30,25 +30,11 @@ _original = EnglishParser.original
 _span_text = EnglishParser.span_text
 
 
-def _morph(token):
-    return {key: tuple(value.split(",")) for key, value in token.morph.to_dict().items()}
+_morph = EnglishParser.morphology
 
 
 def parser_versions():
     return EnglishParser.versions()
-
-
-def _revision_source_token(token):
-    return SourceToken(
-        _original(token),
-        token.lemma_,
-        token.pos_,
-        token.tag_,
-        token.dep_,
-        _morph(token),
-        token.head.i,
-        token.i,
-    )
 
 
 def _revision_number_value(tokens):
@@ -58,8 +44,8 @@ def _revision_number_value(tokens):
 def fallback_source(text):
     """Source tokens and CARDINAL spans for text that never reached the sentence parser."""
     doc = _analyze(text)
-    spans = [(ent.start, ent.end) for ent in doc.ents if ent.label_ == "CARDINAL"]
-    return [_revision_source_token(token) for token in doc], spans
+    ledger = TokenLedger(doc)
+    return list(ledger.source.values()), ledger.numeral_spans
 
 
 def _adverb(child):
@@ -88,30 +74,16 @@ _NP_DEPS = frozenset(
 class _SentenceBuilder:
     """Builds IR clauses and noun phrases for one spaCy sentence."""
 
-    def __init__(self, sent, source):
+    def __init__(self, sent):
         self.sent = sent
-        self.source = source
+        self.ledger = TokenLedger(sent)
+        self.source = self.ledger.source
         self.clause_heads = {token for token in sent if GrammarAnalyzer.is_clause_head(token)}
         self.cache = {}
-        self.numeral_spans = [(ent.start, ent.end) for ent in sent.ents if ent.label_ == "CARDINAL"]
-        self._absorb_numeral_conjunctions()
+        self.numeral_spans = self.ledger.numeral_spans
 
     def source_for(self, token):
-        return self.source.get(token.i)
-
-    def _absorb_numeral_conjunctions(self):
-        """Absorb the "and" inside a parseable CARDINAL span ("one hundred and one")."""
-        doc = self.sent.doc
-        for start, end in self.numeral_spans:
-            if numeral_value(token.text for token in doc[start:end]) is None:
-                continue
-            for token in doc[start:end]:
-                if token.dep_ != "cc" or token.head.pos_ != "NUM" or token.i + 1 >= end:
-                    continue
-                if doc[token.i + 1].pos_ == "NUM":
-                    source = self.source[token.i]
-                    source.disposition = "absorbed"
-                    source.disposition_reason = "numeral conjunction"
+        return self.ledger.source_for(token)
 
     @staticmethod
     def _leading_symbols(token):
@@ -649,8 +621,8 @@ def parse(text):
     doc = _analyze(text)
     sentences = []
     for sent in doc.sents:
-        source = {token.i: _revision_source_token(token) for token in sent}
-        builder = _SentenceBuilder(sent, source)
+        builder = _SentenceBuilder(sent)
+        source = builder.source
         main_root = sent.root
         clause_heads = builder.clause_heads
         root_fallback = False

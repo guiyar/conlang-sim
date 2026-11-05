@@ -56,6 +56,10 @@ class EnglishParser:
         return span.text if original is None else original[span.start_char : span.end_char]
 
     @staticmethod
+    def morphology(token):
+        return {key: tuple(value.split(",")) for key, value in token.morph.to_dict().items()}
+
+    @staticmethod
     def versions():
         try:
             spacy_version = importlib.metadata.version("spacy")
