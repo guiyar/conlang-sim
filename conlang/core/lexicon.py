@@ -1,50 +1,81 @@
 """Stable per-instance lexical root generation."""
 
+import random
+from collections.abc import Iterable, Mapping
+from typing import Callable, Protocol, TypedDict
+
 from .seeds import item_rng
+
+
+class LexiconPhonology(Protocol):
+    def make_root(self, rng: random.Random, lemma: str, pos: str, shape: str) -> str: ...
+
+    def make_syllable(self, rng: random.Random, shape: str) -> str: ...
+
+
+class LexiconEntry(TypedDict):
+    form: str
+    gloss: str
+    lemma: str | None
+    pos: str | None
+    category: str
 
 
 class Lexicon:
     def __init__(
         self,
-        seed,
-        language_id,
-        output_version,
-        phonology,
-        shape_for_pos=None,
-        closed_forms=None,
-        gloss_for=None,
-        canonical_key=None,
+        seed: int | str,
+        language_id: str,
+        output_version: int,
+        phonology: LexiconPhonology,
+        shape_for_pos: Callable[[str], str] | None = None,
+        closed_forms: Mapping[tuple[str, str], str] | None = None,
+        gloss_for: Callable[[str, str], str] | None = None,
+        canonical_key: Callable[[str, str], tuple[str, str]] | None = None,
     ):
         self.seed = seed
         self.language_id = language_id
         self.output_version = output_version
         self.phonology = phonology
         self.shape_for_pos = shape_for_pos or (lambda pos: "numeral" if pos == "NUM" else "content")
-        self.entries = {}
-        self.function_forms = set()
+        self.entries: dict[tuple[str, str], str] = {}
+        self.function_forms: set[str] = set()
         self.closed_forms = dict(closed_forms or {})
-        self._export_entries = {}
+        self._export_entries: dict[tuple[str, str, str], LexiconEntry] = {}
         self._gloss_for = gloss_for or (lambda lemma, pos: lemma.upper())
         self._canonical_key = canonical_key or (lambda lemma, pos: (lemma, pos))
 
-    def register_function_forms(self, forms):
-        self.function_forms.update(forms.values() if isinstance(forms, dict) else forms)
+    def register_function_forms(self, forms: Mapping[object, str] | Iterable[str]) -> None:
+        self.function_forms.update(forms.values() if isinstance(forms, Mapping) else forms)
 
-    def register_closed_forms(self, forms):
+    def register_closed_forms(self, forms: Mapping[tuple[str, str], str]) -> None:
         self.closed_forms.update(forms)
 
-    def record(self, form, gloss, lemma=None, pos=None, category="function"):
-        entry = {"form": form, "gloss": gloss, "lemma": lemma, "pos": pos, "category": category}
+    def record(
+        self,
+        form: str,
+        gloss: str,
+        lemma: str | None = None,
+        pos: str | None = None,
+        category: str = "function",
+    ) -> None:
+        entry: LexiconEntry = {
+            "form": form,
+            "gloss": gloss,
+            "lemma": lemma,
+            "pos": pos,
+            "category": category,
+        }
         self._export_entries[(category, gloss, form)] = entry
 
-    def literal(self, form, gloss=None):
+    def literal(self, form: str, gloss: str | None = None) -> str:
         self.record(form, form if gloss is None else gloss, category="literal")
         return form
 
-    def gloss(self, lemma, pos):
+    def gloss(self, lemma: str, pos: str) -> str:
         return self._gloss_for(lemma, pos)
 
-    def root(self, lemma, pos):
+    def root(self, lemma: str, pos: str) -> str:
         lemma, pos = self._canonical_key(lemma, pos)
         key = (lemma, pos)
         if key in self.closed_forms:
@@ -66,7 +97,7 @@ class Lexicon:
         )
         return form
 
-    def _mint(self, lemma, pos, stream, shape):
+    def _mint(self, lemma: str, pos: str, stream: str, shape: str) -> str:
         """A form depends only on the item and the pre-minted function set, never on call order."""
         for attempt in range(64):
             key_part = f"{lemma}/{pos}" if attempt == 0 else f"{lemma}/{pos}:retry:{attempt}"
@@ -81,10 +112,10 @@ class Lexicon:
             fallback, lemma, pos, shape=shape
         ) + self.phonology.make_syllable(fallback, shape="function")
 
-    def export(self):
+    def export(self) -> list[LexiconEntry]:
         return [self._export_entries[key] for key in sorted(self._export_entries)]
 
-    def collisions(self):
+    def collisions(self) -> dict[str, list[str]]:
         reverse: dict[str, list[str]] = {}
         for (lemma, pos), form in sorted(self.entries.items()):
             reverse.setdefault(form, []).append(f"{lemma}/{pos}")
