@@ -183,7 +183,8 @@ def fallback_source(text):
     return [_revision_source_token(token) for token in doc], spans
 
 
-_MODALS = frozenset({"can", "could", "may", "might", "must", "should", "shall"})
+# will marks future tense; would stays unexpressed.
+_NOT_MODAL = frozenset({"will", "would"})
 
 
 def _degree(token):
@@ -447,7 +448,7 @@ class _SentenceBuilder:
         modals = [
             Modifier(child.text, child.lemma_.lower(), "modal", child.pos_, indices=(child.i,))
             for child in children
-            if child.dep_ == "aux" and child.tag_ == "MD" and child.lemma_.lower() in _MODALS
+            if child.dep_ == "aux" and child.tag_ == "MD" and child.lemma_.lower() not in _NOT_MODAL
         ]
         clause = Clause(
             predicate=root.lemma_.lower(),

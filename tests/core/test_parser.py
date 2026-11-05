@@ -271,3 +271,15 @@ def test_degree_comes_from_morphology():
     assert any(a.np.degree == "comparative" for a in arguments)
     arguments = parse("The cat is the biggest.")[0].clause.arguments
     assert any(a.np.degree == "superlative" for a in arguments)
+
+
+def test_modals_follow_the_md_tag_except_will_and_would():
+    for text, modal in (
+        ("The cat can eat.", "can"),
+        ("He must go.", "must"),
+        ("She ought to go.", None),
+    ):
+        lemmas = [m.lemma for m in parse(text)[0].clause.modals]
+        assert lemmas == ([modal] if modal else []), text
+    assert parse("He will go.")[0].clause.modals == []
+    assert parse("He would go.")[0].clause.modals == []
