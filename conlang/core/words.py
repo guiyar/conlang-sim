@@ -14,9 +14,11 @@ class Morpheme:
     gloss: str
     kind: str
     position: int | None = None
+    sources: tuple[int, ...] = ()
 
     def __post_init__(self):
         self.segments = tuple(self.segments)
+        self.sources = tuple(self.sources)
         if self.kind not in VALID_KINDS:
             raise ValueError(f"invalid morpheme kind: {self.kind}")
 
@@ -28,6 +30,10 @@ class Word:
     _surfaced: bool = False
     _surface_form: str | None = None
     literal: bool = False
+
+    @property
+    def sources(self):
+        return tuple(sorted({i for m in self.morphemes for i in m.sources}))
 
     @property
     def segments(self):
@@ -69,7 +75,9 @@ class Word:
             return
         root = self.morphemes[root_index]
         copied = tuple((syllabify(root.segments)[0] if partial and syllabify else root.segments))
-        self.morphemes.insert(root_index, Morpheme(copied, "RED", "reduplicant"))
+        self.morphemes.insert(
+            root_index, Morpheme(copied, "RED", "reduplicant", sources=root.sources)
+        )
 
     def cliticize(self, morpheme):
         self.morphemes.append(morpheme)

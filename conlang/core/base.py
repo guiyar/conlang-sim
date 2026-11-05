@@ -135,9 +135,14 @@ class Translator:
         words = []
         punctuation = []
         for token in source_tokens:
+            sources = () if token.index is None else (token.index,)
             if token.index in numerals:
                 span, value = numerals[token.index]
-                words.extend(self.realizer.numeral_sequence(value, self.lexicon))
+                words.extend(
+                    self.realizer.numeral_sequence(
+                        value, self.lexicon, tuple(item.index for item in span)
+                    )
+                )
                 for item in span:
                     if item.pos == "CCONJ" and item.dep == "cc":
                         item.disposition, item.disposition_reason = (
@@ -171,14 +176,28 @@ class Translator:
                     words.append(word)
                 continue
             if any(char.isdigit() for char in token.text) or token.pos == "PROPN":
-                words.append(Word([Morpheme((token.text,), token.text, "root")], literal=True))
+                words.append(
+                    Word(
+                        [Morpheme((token.text,), token.text, "root", sources=sources)],
+                        literal=True,
+                    )
+                )
                 token.disposition = "realized"
                 continue
             lemma = (token.lemma or token.text).lower()
             pos = token.pos or "X"
             form = self.lexicon.root(lemma, pos)
             words.append(
-                Word([Morpheme(tuple(self.phonology.segments(form)), lemma.upper(), "root")])
+                Word(
+                    [
+                        Morpheme(
+                            tuple(self.phonology.segments(form)),
+                            lemma.upper(),
+                            "root",
+                            sources=sources,
+                        )
+                    ]
+                )
             )
             token.disposition = "realized"
         if not source_tokens:

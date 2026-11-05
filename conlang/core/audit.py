@@ -87,6 +87,8 @@ class AuditedIR:
             normalized = normalized.replace("np.coordinated[].", "coordination.")
             normalized = normalized.replace("np.post_modifiers[].", "post_modifier.")
             normalized = normalized.replace("clause.adverbs[].", "modifier.")
+            normalized = normalized.replace("np.predeterminers[].", "modifier.")
+            normalized = normalized.replace("np.adverbs[].", "modifier.")
             normalized = normalized.replace("clause.arguments[].", "argument.")
             normalized = normalized.replace("clause.source_tokens[].", "source_token.")
             normalized = normalized.replace("np.source_tokens[].", "source_token.")

@@ -4,7 +4,7 @@ import random
 import re
 
 import pytest
-from probes import MATRIX, PROBES, PROFILE, dialect_translators, make_translator
+from probes import MATRIX, PROBES, PROFILE, dialect_translators, fresh, make_translator
 
 from conlang.core.base import Translator
 
@@ -85,3 +85,36 @@ def test_green_apples_is_the_same_before_and_after_translating_a_cat():
     assert [w.surface() for w in warm.translate("green apples")[0].words] == [
         w.surface() for w in cold
     ]
+
+
+def _realize(translator, sentence):
+    if sentence.clause.kind == "rootless":
+        result = translator._fallback_result(sentence.source_text, None, sentence)
+        return result.words, result.rules
+    return translator.realizer.realize(sentence, translator.lexicon)
+
+
+@pytest.mark.parametrize("name,translator", ALL, ids=IDS)
+def test_ledger_dispositions_are_backed_by_output_words(name, translator):
+    for text in PROBES:
+        for sentence in fresh(text):
+            words, _ = _realize(translator, sentence)
+            emitted = {i for word in words for i in word.sources}
+            for token in sentence.source_tokens:
+                where = (name, text, token.text)
+                assert token.disposition in {"realized", "absorbed", "dropped"}, where
+                if token.disposition == "realized":
+                    assert token.index in emitted, where
+                else:
+                    assert token.disposition_reason, where
+
+
+@pytest.mark.parametrize("name,translator", ALL, ids=IDS)
+def test_predeterminers_and_np_adverbs_are_realized_not_residual(name, translator):
+    for text, word in (("All the dogs ate.", "All"), ("Why is the cat here?", "here")):
+        sentence = fresh(text)[0]
+        words, rules = _realize(translator, sentence)
+        token = next(t for t in sentence.source_tokens if t.text == word)
+        assert token.disposition == "realized"
+        assert token.index in {i for w in words for i in w.sources}
+        assert f"residual token: {word}" not in rules

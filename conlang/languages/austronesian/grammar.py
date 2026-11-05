@@ -374,9 +374,18 @@ class Realizer:
         )
         return Morpheme(tuple(self.phonology.segments(self.forms[name])), name, kind)
 
-    def _root(self, lemma, pos, lexicon):
+    @staticmethod
+    def _tag(word, sources):
+        """Attribute every morpheme of a freshly built word to its source token indices."""
+        indices = tuple(index for index in sources if index is not None)
+        for morpheme in word.morphemes:
+            morpheme.sources = indices
+        return word
+
+    def _root(self, lemma, pos, lexicon, sources=()):
         form = lexicon.root(lemma, pos)
-        return Word([Morpheme(tuple(self.phonology.segments(form)), lemma.upper(), "root")])
+        word = Word([Morpheme(tuple(self.phonology.segments(form)), lemma.upper(), "root")])
+        return self._tag(word, sources)
 
     @staticmethod
     def _dispose(token, disposition, reason=None):
@@ -384,14 +393,15 @@ class Realizer:
             token.disposition = disposition
             token.disposition_reason = reason
 
-    def _lexical_word(self, lemma, pos, lexicon, gloss=None):
+    def _lexical_word(self, lemma, pos, lexicon, gloss=None, sources=()):
         form = self.phonology.segments(lexicon.root(lemma, pos))
-        return Word([Morpheme(tuple(form), gloss or lemma.upper(), "root")])
+        word = Word([Morpheme(tuple(form), gloss or lemma.upper(), "root")])
+        return self._tag(word, sources)
 
-    def _literal_word(self, text):
-        return Word([Morpheme((text,), text, "root")], literal=True)
+    def _literal_word(self, text, sources=()):
+        return self._tag(Word([Morpheme((text,), text, "root")], literal=True), sources)
 
-    def _number_words(self, value, lexicon, rules, fallback_text=None):
+    def _number_words(self, value, lexicon, rules, fallback_text=None, sources=()):
         if value is None:
             raw_words = [
                 part.lower()
@@ -402,11 +412,11 @@ class Realizer:
             names = raw_words
         else:
             names = numeral_words(value)
-        return [self._root(name, "NUM", lexicon) for name in names]
+        return [self._root(name, "NUM", lexicon, sources) for name in names]
 
-    def numeral_sequence(self, value, lexicon):
+    def numeral_sequence(self, value, lexicon, sources=()):
         """Numeral words for a parsed value, as the noun-phrase path composes them."""
-        return self._number_words(value, lexicon, [])
+        return self._number_words(value, lexicon, [], sources=sources)
 
     def _pronoun_label(self, np):
         return personal_pronoun_form(np.person, np.number, self.features["pronoun_number"])
@@ -414,30 +424,45 @@ class Realizer:
     def _np_words(self, np, lexicon, rules):
         kind = np.kind
         if kind == "proper" or np.literal:
-            head_words = [self._literal_word(np.surface or np.head)]
+            head_words = [self._literal_word(np.surface or np.head, np.head_indices)]
         elif kind == "number":
             if np.numeral_value is not None:
-                head_words = self._number_words(np.numeral_value, lexicon, rules, np.surface)
+                head_words = self._number_words(
+                    np.numeral_value, lexicon, rules, np.surface, np.head_indices
+                )
             elif np.literal:
-                head_words = [self._literal_word(np.surface or np.head)]
+                head_words = [self._literal_word(np.surface or np.head, np.head_indices)]
             else:
-                head_words = self._number_words(None, lexicon, rules, np.surface or np.head)
+                head_words = self._number_words(
+                    None, lexicon, rules, np.surface or np.head, np.head_indices
+                )
         elif kind == "pronoun":
             form_id = self._pronoun_label(np)
             head_words = [
-                Word(
-                    [Morpheme(tuple(self.phonology.segments(self.forms[form_id])), form_id, "root")]
+                self._tag(
+                    Word(
+                        [
+                            Morpheme(
+                                tuple(self.phonology.segments(self.forms[form_id])), form_id, "root"
+                            )
+                        ]
+                    ),
+                    np.head_indices,
                 )
             ]
         elif kind == "demonstrative_pronoun" and self.features["demonstratives"] == "two_way":
-            head_words = [self._function_word("PROX" if np.demonstrative == "proximal" else "DIST")]
+            head_words = [
+                self._function_word(
+                    "PROX" if np.demonstrative == "proximal" else "DIST", np.head_indices
+                )
+            ]
         else:
             head_pos = np.pos or (
                 "PRON"
                 if kind in {"wh_pronoun", "other_pronoun", "demonstrative_pronoun"}
                 else "NOUN"
             )
-            head_words = [self._lexical_word(np.head, head_pos, lexicon)]
+            head_words = [self._lexical_word(np.head, head_pos, lexicon, sources=np.head_indices)]
 
         if (
             self.features["noun_number"] != "none"
@@ -454,7 +479,7 @@ class Realizer:
         ):
             number_strategy = self.features["noun_number"]
             if number_strategy == "particle":
-                head_words.append(self._function_word("PL"))
+                head_words.append(self._function_word("PL", np.head_indices))
             elif number_strategy in {"full_reduplication", "partial_reduplication"}:
                 head_words[0].reduplicate(
                     number_strategy == "partial_reduplication", self.phonology.syllabify
@@ -464,13 +489,25 @@ class Realizer:
         for modifier in np.modifiers:
             modifier_kind = modifier.kind
             if modifier.literal or any(char.isdigit() for char in modifier.text):
-                group = [self._literal_word(modifier.text)]
+                group = [self._literal_word(modifier.text, modifier.indices)]
             elif modifier_kind == "numeral":
-                group = self._number_words(modifier.value, lexicon, rules, modifier.text)
+                group = self._number_words(
+                    modifier.value, lexicon, rules, modifier.text, modifier.indices
+                )
             else:
-                group = [self._lexical_word(modifier.lemma.lower(), modifier.pos or "ADJ", lexicon)]
+                group = [
+                    self._lexical_word(
+                        modifier.lemma.lower(),
+                        modifier.pos or "ADJ",
+                        lexicon,
+                        None,
+                        modifier.indices,
+                    )
+                ]
                 sub_words = [
-                    self._lexical_word(item.lemma.lower(), item.pos or "ADV", lexicon)
+                    self._lexical_word(
+                        item.lemma.lower(), item.pos or "ADV", lexicon, None, item.indices
+                    )
                     for item in modifier.sub_modifiers
                 ]
                 group = sub_words + group
@@ -484,7 +521,10 @@ class Realizer:
             and self.features["demonstratives"] == "two_way"
         ):
             demo_particle = [
-                self._function_word("PROX" if np.demonstrative == "proximal" else "DIST")
+                self._function_word(
+                    "PROX" if np.demonstrative == "proximal" else "DIST",
+                    (np.demonstrative_index,),
+                )
             ]
         elif kind != "demonstrative_pronoun" and np.demonstrative != "none":
             demonstrative_token = next(
@@ -494,7 +534,10 @@ class Realizer:
             if demonstrative_token is not None:
                 demo_particle = [
                     self._lexical_word(
-                        demonstrative_token.lemma.lower(), demonstrative_token.pos or "DET", lexicon
+                        demonstrative_token.lemma.lower(),
+                        demonstrative_token.pos or "DET",
+                        lexicon,
+                        sources=(demonstrative_token.index,),
                     )
                 ]
         if self.features["modifier_position"] == "before":
@@ -510,9 +553,13 @@ class Realizer:
         if self.features["articles"] != "none":
             article = article_label(self.features["articles"], np.definiteness)
         if article and self.features["article_position"] == "before":
-            core_words.insert(0, self._function_word(article))
+            core_words.insert(0, self._function_word(article, (np.determiner_index,)))
         elif article:
-            core_words.append(self._function_word(article))
+            core_words.append(self._function_word(article, (np.determiner_index,)))
+        core_words = [
+            self._lexical_word(item.lemma.lower(), item.pos or "DET", lexicon, sources=item.indices)
+            for item in np.predeterminers
+        ] + core_words
 
         if np.possessor is not None:
             possessor_words = self._np_words(np.possessor.np, lexicon, rules)
@@ -521,10 +568,24 @@ class Realizer:
             else:
                 core_words.extend(possessor_words)
 
+        for adverb in np.adverbs:
+            core_words.append(
+                self._lexical_word(
+                    adverb.lemma.lower(), adverb.pos or "ADV", lexicon, sources=adverb.indices
+                )
+            )
+
         for post_modifier in np.post_modifiers:
             if post_modifier.kind == "prep":
                 if post_modifier.adposition:
-                    core_words.append(self._lexical_word(post_modifier.adposition, "ADP", lexicon))
+                    core_words.append(
+                        self._lexical_word(
+                            post_modifier.adposition,
+                            "ADP",
+                            lexicon,
+                            sources=(post_modifier.index,),
+                        )
+                    )
                 if post_modifier.np is not None:
                     core_words.extend(self._np_words(post_modifier.np, lexicon, rules))
             elif post_modifier.kind == "clause" and post_modifier.link is not None:
@@ -534,24 +595,22 @@ class Realizer:
             if coordination.conj is not None:
                 conj = coordination.conj
                 core_words.append(
-                    self._lexical_word(conj.lemma.lower(), conj.pos or "CCONJ", lexicon)
+                    self._lexical_word(
+                        conj.lemma.lower(), conj.pos or "CCONJ", lexicon, sources=(conj.index,)
+                    )
                 )
-                self._dispose(conj, "realized")
             core_words.extend(self._np_words(coordination.np, lexicon, rules))
 
         for token in np.source_tokens:
             if token.disposition is None:
                 if token.pos == "PUNCT":
                     self._dispose(token, "absorbed", "punctuation")
-                elif token.dep == "det" and token.morph.get("Definite"):
-                    label = self._determiner_label(token)
-                    self._dispose(
-                        token,
-                        "realized" if label else "absorbed",
-                        None if label else "article distinction merged",
-                    )
-                else:
-                    self._dispose(token, "realized")
+                elif (
+                    token.dep == "det"
+                    and token.morph.get("Definite")
+                    and self._determiner_label(token) is None
+                ):
+                    self._dispose(token, "absorbed", "article distinction merged")
         return core_words
 
     def _determiner_label(self, token):
@@ -566,18 +625,20 @@ class Realizer:
         if label is None:
             self._dispose(token, "absorbed", "article distinction merged")
             return None
-        self._dispose(token, "realized")
-        return self._function_word(label)
+        return self._function_word(label, (token.index,))
 
-    def _function_word(self, name):
-        return Word([self._m(name, "particle")])
+    def _function_word(self, name, sources=()):
+        return self._tag(Word([self._m(name, "particle")]), sources)
 
     def _realize_link(self, link, lexicon, rules):
         words = []
         if link.marker is not None:
             marker = link.marker
-            words.append(self._lexical_word(marker.lemma.lower(), marker.pos or "SCONJ", lexicon))
-            self._dispose(marker, "realized")
+            words.append(
+                self._lexical_word(
+                    marker.lemma.lower(), marker.pos or "SCONJ", lexicon, sources=(marker.index,)
+                )
+            )
         words.extend(self._realize_clause(link.clause, lexicon, rules))
         return words
 
@@ -587,13 +648,12 @@ class Realizer:
             for token in clause.source_tokens:
                 if token.pos == "INTJ":
                     lemma = (token.lemma or token.text).lower()
-                    sequence.append(self._lexical_word(lemma, "INTJ", lexicon))
-                    self._dispose(token, "realized")
+                    sequence.append(
+                        self._lexical_word(lemma, "INTJ", lexicon, sources=(token.index,))
+                    )
             return sequence
         for argument in clause.arguments:
             sequence.extend(self._np_words(argument.np, lexicon, rules))
-            for token in argument.source_tokens:
-                self._dispose(token, "realized")
         return sequence
 
     def _realize_clause(self, clause, lexicon, rules):
@@ -603,7 +663,12 @@ class Realizer:
         if not (
             clause.predicate == "be" and clause.kind in {"equational", "locative", "existential"}
         ):
-            verb = self._root(clause.predicate, clause.predicate_pos or "VERB", lexicon)
+            verb = self._root(
+                clause.predicate,
+                clause.predicate_pos or "VERB",
+                lexicon,
+                (clause.predicate_index,),
+            )
         if verb is not None and self.features["imperfective_reduplication"] == "yes":
             category = tam_category(
                 self.features["tam_system"], clause.tense, clause.perfect, clause.progressive
@@ -678,7 +743,14 @@ class Realizer:
                     words.remove(pronoun_word)
                     if self.features["pronoun_strategy"] == "clitic_verb" and verb is not None:
                         for morpheme in pronoun_word.morphemes:
-                            verb.cliticize(Morpheme(morpheme.segments, morpheme.gloss, "clitic"))
+                            verb.cliticize(
+                                Morpheme(
+                                    morpheme.segments,
+                                    morpheme.gloss,
+                                    "clitic",
+                                    sources=morpheme.sources,
+                                )
+                            )
                     elif self.features["pronoun_strategy"] == "clitic_second":
                         second_position_clitics.append(pronoun_word)
                     else:
@@ -689,16 +761,29 @@ class Realizer:
                 if case:
                     words.insert(0, self._function_word(case))
                 elif argument.preposition and argument.relation in {"oblique", "indirect_object"}:
-                    words.insert(0, self._lexical_word(argument.preposition, "ADP", lexicon))
+                    words.insert(
+                        0,
+                        self._lexical_word(
+                            argument.preposition,
+                            "ADP",
+                            lexicon,
+                            sources=(argument.preposition_index,),
+                        ),
+                    )
             elif (
                 not cliticized
                 and argument.preposition
                 and argument.relation in {"oblique", "indirect_object"}
             ):
-                words.insert(0, self._lexical_word(argument.preposition, "ADP", lexicon))
-            if argument.source_tokens:
-                for token in argument.source_tokens:
-                    self._dispose(token, "realized")
+                words.insert(
+                    0,
+                    self._lexical_word(
+                        argument.preposition,
+                        "ADP",
+                        lexicon,
+                        sources=(argument.preposition_index,),
+                    ),
+                )
             argument_words.append((argument.relation, words))
 
         subjects = [
@@ -708,25 +793,11 @@ class Realizer:
             word for relation, words in argument_words if relation != "subject" for word in words
         ]
         adverbs = [
-            self._lexical_word(adverb.lemma.lower(), adverb.pos or "ADV", lexicon)
+            self._lexical_word(
+                adverb.lemma.lower(), adverb.pos or "ADV", lexicon, sources=adverb.indices
+            )
             for adverb in clause.adverbs
         ]
-        predicate_token = next(
-            (
-                token
-                for token in clause.source_tokens
-                if token.lemma.lower() == clause.predicate and token.pos in {"VERB", "AUX"}
-            ),
-            None,
-        )
-        for token in clause.source_tokens:
-            if (
-                token.dep == "advmod"
-                and predicate_token is not None
-                and token.head_index == predicate_token.index
-                and token.text.lower() not in {"not", "n't"}
-            ):
-                self._dispose(token, "realized")
         verb_slot = [verb] if verb is not None else []
         preverbal_negation = (
             [self._function_word("NEG")]
@@ -749,11 +820,18 @@ class Realizer:
             if sequence:
                 target = sequence[1] if len(sequence) > 1 else sequence[0]
                 for morpheme in clitic_word.morphemes:
-                    target.cliticize(Morpheme(morpheme.segments, morpheme.gloss, "clitic"))
+                    target.cliticize(
+                        Morpheme(
+                            morpheme.segments, morpheme.gloss, "clitic", sources=morpheme.sources
+                        )
+                    )
             else:
                 sequence.append(clitic_word)
 
-        self._dispose(predicate_token, "realized")
+        if verb is None:
+            for token in clause.source_tokens:
+                if token.index == clause.predicate_index:
+                    self._dispose(token, "absorbed", "copula not expressed")
         for token in clause.source_tokens:
             if token.pos == "AUX" or token.dep in {"aux", "auxpass"}:
                 self._dispose(token, "absorbed", "auxiliary contributes tense, aspect, or voice")
@@ -771,10 +849,13 @@ class Realizer:
     def realize(self, ir, lexicon):
         rules = list(ir.rules)
         sequence = self._realize_clause(ir.clause, lexicon, rules)
+        emitted = {index for word in sequence for index in word.sources}
         for token in ir.source_tokens:
             if token.disposition is not None:
                 continue
-            if (
+            if token.index in emitted:
+                self._dispose(token, "realized")
+            elif (
                 token.pos == "PUNCT"
                 or token.text
                 and not any(char.isalnum() for char in token.text)
@@ -783,12 +864,16 @@ class Realizer:
             elif token.pos == "AUX" or token.dep in {"aux", "auxpass", "neg"}:
                 self._dispose(token, "absorbed", "grammatical auxiliary or polarity marker")
             else:
+                sources = (token.index,)
                 if any(char.isdigit() for char in token.text) or token.pos == "PROPN":
-                    sequence.append(self._literal_word(token.text))
+                    sequence.append(self._literal_word(token.text, sources))
                 else:
                     sequence.append(
                         self._lexical_word(
-                            (token.lemma or token.text).lower(), token.pos or "X", lexicon
+                            (token.lemma or token.text).lower(),
+                            token.pos or "X",
+                            lexicon,
+                            sources=sources,
                         )
                     )
                 self._dispose(token, "realized")

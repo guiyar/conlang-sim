@@ -25,10 +25,19 @@ STRUCTURAL_FIELDS = frozenset(
         "np.morphology",
         "np.numeral_value",
         "np.literal",
+        "np.head_indices",
+        "np.determiner_index",
+        "np.demonstrative_index",
+        "np.predeterminers",
+        "np.adverbs",
+        "modifier.indices",
+        "modifier.lemma",
+        "post_modifier.index",
+        "argument.preposition_index",
+        "clause.predicate_index",
         "np.post_modifiers",
         "np.coordinated",
         "modifier.pos",
-        "modifier.lemma",
         "modifier.value",
         "modifier.literal",
         "modifier.sub_modifiers",
@@ -120,6 +129,15 @@ IR_FIELD_JUSTIFICATIONS = MappingProxyType(
         "np.definiteness": "Article realization consumes parser-observed determiner morphology.",
         "np.numeral_value": "The parsed integer determines composed numeral identity.",
         "np.post_modifiers": "Structured PP and clause attachments preserve NP structure.",
+        "np.head_indices": "Source token indices of the head words give output words their provenance.",
+        "np.determiner_index": "The determiner token that fixed definiteness is the article's provenance.",
+        "np.demonstrative_index": "The demonstrative token is the provenance of the demonstrative word.",
+        "np.predeterminers": "Predeterminers (all, both, half) are closed-class words before the NP.",
+        "np.adverbs": "NP-attached adverbs follow the noun phrase.",
+        "modifier.indices": "Source token indices give modifier words their provenance.",
+        "post_modifier.index": "The source adposition token is the provenance of the adposition word.",
+        "argument.preposition_index": "The source preposition token is the provenance of its word.",
+        "clause.predicate_index": "The predicate token is the provenance of the verb word.",
     }
 )
 
@@ -147,6 +165,7 @@ class Modifier:
     value: int | None = None
     literal: bool = False
     sub_modifiers: list = field(default_factory=list)
+    indices: tuple = ()
 
 
 @dataclass
@@ -160,6 +179,7 @@ class PostModifier:
     adposition: str | None = None
     np: "NounPhrase | None" = None
     link: "ClauseLink | None" = None
+    index: int | None = None
 
 
 @dataclass
@@ -196,6 +216,11 @@ class NounPhrase:
     definiteness: str = UNSPECIFIED
     numeral_value: int | None = None
     literal: bool = False
+    head_indices: tuple = ()
+    determiner_index: int | None = None
+    demonstrative_index: int | None = None
+    predeterminers: list = field(default_factory=list)
+    adverbs: list = field(default_factory=list)
 
 
 @dataclass
@@ -206,6 +231,7 @@ class Argument:
     source_dep: str = ""
     source_tokens: list = field(default_factory=list)
     preposition: str | None = None
+    preposition_index: int | None = None
 
 
 @dataclass
@@ -227,6 +253,7 @@ class Clause:
     source_tokens: list = field(default_factory=list)
     argument_order: list = field(default_factory=list)
     links: list = field(default_factory=list)
+    predicate_index: int | None = None
 
 
 @dataclass

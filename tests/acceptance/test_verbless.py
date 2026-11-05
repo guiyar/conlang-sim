@@ -318,8 +318,8 @@ def test_numeral_conjunction_is_absorbed_by_the_parse_not_realized():
 def test_fallback_composes_cardinal_spans_and_absorbs_the_inner_and():
     translator = Translator(PROFILE, "2026")
     for text, value in (
-        ("very quickly two hundred and fifty", 250),
-        ("very quickly one hundred and one", 101),
+        ("of two hundred and fifty", 250),
+        ("of one hundred and one", 101),
     ):
         sentence = parse(text)[0]
         assert sentence.clause.kind == "rootless"
@@ -330,13 +330,13 @@ def test_fallback_composes_cardinal_spans_and_absorbs_the_inner_and():
         conjunction = next(t for t in sentence.source_tokens if t.dep == "cc")
         assert conjunction.disposition_reason == "numeral conjunction"
         assert all(t.disposition is not None for t in sentence.source_tokens)
-    result = translator._fallback_result("very quickly one hundred and one", RuntimeError("x"))
+    result = translator._fallback_result("of one hundred and one", RuntimeError("x"))
     assert glosses(result.words)[-2:] == ["HUNDRED", "ONE"]
 
 
 def test_fallback_keeps_unparseable_spans_token_by_token():
     translator = Translator(PROFILE, "2026")
-    sentence = parse("very quickly 101")[0]
+    sentence = parse("of 101")[0]
     result = translator._fallback_result(sentence.source_text, None, sentence)
     assert [w.surface() for w in result.words][-1] == "101"
     assert result.words[-1].literal

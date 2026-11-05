@@ -212,7 +212,8 @@ def _revision_mood_tam_kind(root, sentence, main):
 
 
 _NP_DEPS = frozenset(
-    {"det", "amod", "compound", "nummod", "quantmod", "poss", "nmod:poss", "prep"}
+    {"det", "amod", "compound", "nummod", "quantmod", "poss", "nmod:poss", "prep", "predet"}
+    | {"advmod"}
     | {"appos", "conj", "cc", "punct"}
 )
 
@@ -253,6 +254,12 @@ class _SentenceBuilder:
             symbols.insert(0, token.doc[index])
             index -= 1
         return symbols
+
+    def _indices(self, token):
+        """The token's index plus any currency symbols fused into its literal text."""
+        if not any(char.isdigit() for char in token.text):
+            return (token.i,)
+        return (*(symbol.i for symbol in self._leading_symbols(token)), token.i)
 
     def _symbol_text(self, token):
         """Digit tokens keep a leading currency symbol attached, as one literal."""
@@ -305,6 +312,7 @@ class _SentenceBuilder:
                         child.dep_,
                         ([self.source_for(child)] if head is not child else []) + np.source_tokens,
                         child.lemma_.lower() if head is not child else None,
+                        child.i if head is not child else None,
                     )
                 )
             elif child.dep_ in {"attr", "acomp"}:
@@ -322,6 +330,7 @@ class _SentenceBuilder:
                             "prep",
                             [self.source_for(child)] + np.source_tokens,
                             child.lemma_.lower(),
+                            child.i,
                         )
                     )
         for token in passive_agents:
@@ -335,6 +344,7 @@ class _SentenceBuilder:
                     "by_phrase",
                     ([marker] if marker is not None else []) + np.source_tokens,
                     "by",
+                    token.head.i if marker is not None else None,
                 )
             )
         polarity = (
@@ -343,13 +353,14 @@ class _SentenceBuilder:
             else "positive"
         )
         adverbs = [
-            Modifier(child.text, child.lemma_.lower(), "modifier", child.pos_)
+            Modifier(child.text, child.lemma_.lower(), "modifier", child.pos_, indices=(child.i,))
             for child in children
             if child.dep_ == "advmod" and child.lower_ not in {"not", "n't"}
         ]
         clause = Clause(
             predicate=root.lemma_.lower(),
             predicate_pos=root.pos_,
+            predicate_index=root.i,
             kind=kind,
             polarity=polarity,
             tense=tense,
@@ -428,6 +439,7 @@ class _SentenceBuilder:
             "other_pronoun",
         }:
             definiteness = "none"
+            determiner = None
         else:
             determiner = next(
                 (
@@ -467,13 +479,32 @@ class _SentenceBuilder:
         digit_tokens = [item for item in own_tokens if any(char.isdigit() for char in item.text)]
         numeral_value = None if digit_tokens else _revision_number_value(number_tokens)
         modifiers: list[Modifier] = []
+        predeterminers = [
+            Modifier(
+                child.text, child.lemma_.lower(), "predeterminer", child.pos_, indices=(child.i,)
+            )
+            for child in sorted(token.children, key=lambda item: item.i)
+            if child.dep_ == "predet"
+        ]
+        adverbs = [
+            Modifier(child.text, child.lemma_.lower(), "modifier", child.pos_, indices=(child.i,))
+            for child in sorted(token.children, key=lambda item: item.i)
+            if child.dep_ == "advmod"
+        ]
+        demonstrative_index = token.i if np_kind == "demonstrative_pronoun" else None
         for symbol in token.children:
             following = token.doc[symbol.i + 1] if symbol.i + 1 < len(token.doc) else None
             attached = following is not None and any(char.isdigit() for char in following.text)
             if symbol.pos_ == "SYM" and symbol.i < token.i and not attached:
                 modifiers.append(
                     Modifier(
-                        symbol.text, symbol.lemma_.lower(), "modifier", symbol.pos_, None, True
+                        symbol.text,
+                        symbol.lemma_.lower(),
+                        "modifier",
+                        symbol.pos_,
+                        None,
+                        True,
+                        indices=(symbol.i,),
                     )
                 )
         for child in sorted(token.children, key=lambda item: item.i):
@@ -493,6 +524,7 @@ class _SentenceBuilder:
                             "numeral",
                             "NUM",
                             numeral_value,
+                            indices=tuple(item.i for item in number_tokens),
                         )
                     )
                 continue
@@ -500,6 +532,7 @@ class _SentenceBuilder:
                 demonstrative = (
                     "proximal" if child.lemma_.lower() in {"this", "these"} else "distal"
                 )
+                demonstrative_index = child.i
                 continue
             if child.dep_ not in {"amod", "compound", "nummod", "quantmod", "det", "poss"}:
                 continue
@@ -512,7 +545,7 @@ class _SentenceBuilder:
             if child.dep_ in {"nummod", "quantmod"} and child in number_tokens:
                 continue
             sub_modifiers = [
-                Modifier(adv.text, adv.lemma_.lower(), "modifier", adv.pos_)
+                Modifier(adv.text, adv.lemma_.lower(), "modifier", adv.pos_, indices=(adv.i,))
                 for adv in child.children
                 if adv.dep_ == "advmod"
             ]
@@ -530,6 +563,7 @@ class _SentenceBuilder:
                     None,
                     any(char.isdigit() for char in child.text),
                     sub_modifiers,
+                    self._indices(child),
                 )
             )
         for digit_token in digit_tokens:
@@ -546,6 +580,7 @@ class _SentenceBuilder:
                     digit_token.pos_,
                     None,
                     True,
+                    indices=self._indices(digit_token),
                 )
                 numeral_position = next(
                     (
@@ -577,6 +612,7 @@ class _SentenceBuilder:
                         "prep",
                         child.lemma_.lower(),
                         self.build_np(pobj, seen.copy()) if pobj else None,
+                        index=child.i,
                     )
                 )
             elif child.dep_ in {"relcl", "acl"} and child in self.clause_heads:
@@ -634,6 +670,15 @@ class _SentenceBuilder:
             definiteness=definiteness,
             numeral_value=numeral_value,
             literal=any(char.isdigit() for char in token.text),
+            head_indices=(
+                tuple(item.i for item in number_tokens)
+                if np_kind == "number" and numeral_value is not None
+                else self._indices(token)
+            ),
+            determiner_index=determiner.i if determiner is not None else None,
+            demonstrative_index=demonstrative_index,
+            predeterminers=predeterminers,
+            adverbs=adverbs,
         )
 
     def _is_plain_np(self, token):
