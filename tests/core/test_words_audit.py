@@ -31,6 +31,33 @@ def test_audit_rejects_undeclared_grammatical_read():
     assert not audited.passes(set())
 
 
+def test_audit_rejects_new_meaning_bearing_ir_fields_without_declarations():
+    source = SentenceIR(
+        Clause(arguments=[Argument("subject", "other", NounPhrase("dog", definiteness="definite"))]),
+        "the dog",
+    )
+    audited = AuditedIR(source)
+    _ = audited.value.clause.arguments[0].np.definiteness
+    assert not audited.passes(set())
+    assert audited.passes({"np.definiteness"})
+
+    audited = AuditedIR(source)
+    _ = audited.value.clause.arguments[0].np.post_modifiers
+    assert audited.passes(set())
+
+
+def test_audit_accepts_new_structural_ir_fields_without_feature_declarations():
+    source = SentenceIR(
+        Clause(links=[], arguments=[Argument("subject", "other", NounPhrase("dog", pos="NOUN", numeral_value=5))]),
+        "dog",
+    )
+    audited = AuditedIR(source)
+    _ = audited.value.clause.arguments[0].np.pos
+    _ = audited.value.clause.arguments[0].np.numeral_value
+    _ = audited.value.clause.links
+    assert audited.passes(set())
+
+
 def test_infix_follows_complete_onset_and_surface_is_cached():
     word = Word([Morpheme(("k", "l", "a", "t"), "ROOT", "root")])
     word.add_infix(Morpheme(("u", "m"), "AF", "infix"), 2)
@@ -39,7 +66,7 @@ def test_infix_follows_complete_onset_and_surface_is_cached():
     first = word.surface(lambda segments, notes, vowel: calls.append(1) or segments)
     assert word.surface(lambda segments, notes, vowel: calls.append(1) or segments) == first
     assert len(calls) == 1
-    assert word.gloss() == "ROOT-AF"
+    assert word.gloss() == "ROOT<AF>"
 
 
 def test_invalid_morpheme_kind_rejected():
@@ -51,8 +78,8 @@ def test_invalid_morpheme_kind_rejected():
         raise AssertionError("invalid morpheme kind was accepted")
 
 
-def test_fragment_generation_records_fallback_span_and_preserves_literal_tokens():
+def test_punctuation_only_input_uses_empty_fallback_words():
     profile = discover_languages()["austronesian"]
-    result = Translator(profile, 5).translate("!!!")
+    result = Translator(profile, 5).translate("!!!")[0]
     assert result.fallback_spans == [(0, 3)]
-    assert [word.surface() for word in result.words] == ["!", "!", "!"]
+    assert result.words == []

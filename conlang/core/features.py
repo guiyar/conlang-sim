@@ -5,8 +5,8 @@ import math
 from .ir import VALID_SOURCE_FIELDS
 from .seeds import item_rng
 
-VALID_STATUSES = {"attested", "adapted", "invented"}
-VALID_REASONS = {"licensing", "dependency", "exclusivity", "ambiguity"}
+VALID_STATUSES = frozenset({"attested", "adapted", "invented"})
+VALID_REASONS = frozenset({"licensing", "dependency", "exclusivity", "ambiguity"})
 
 
 @dataclass(frozen=True)
@@ -106,7 +106,11 @@ class FeatureCatalog:
                     accepted = value if isinstance(value, (tuple, list, set, frozenset)) else (value,)
                     if fid not in option_ids or not set(accepted) <= option_ids[fid]:
                         raise ValueError(f"invalid reference in constraint {constraint.id}: {fid}={value}")
-        if any(f.id in self.excluded_features for f in self.features):
+        excluded_ids = {
+            item[0] if isinstance(item, (tuple, list)) else item
+            for item in self.excluded_features
+        }
+        if any(feature.id in excluded_ids for feature in self.features):
             raise ValueError("excluded feature appears in catalog")
         for feature in self.features:
             for option in feature.options:
@@ -192,8 +196,15 @@ class FeatureCatalog:
             lines.append(f"{feature.id} [{feature.group}] source_fields={fields}")
             for option in feature.options:
                 attestation = ", ".join(option.attested_in) or "none stated"
-                lines.append(f"  {option.id}: {option.status}; attested_in={attestation}" + (f"; {option.note}" if option.note else ""))
+                lines.append(f"  {option.id}: weight={option.weight:g}; {option.status}; attested_in={attestation}" + (f"; {option.note}" if option.note else ""))
         if self.excluded_features:
             lines.append("Excluded features:")
             lines.extend(f"  {fid}: {reason}" for fid, reason in self.excluded_features)
+        if self.constraints:
+            lines.append("Constraints:")
+            for constraint in self.constraints:
+                lines.append(
+                    f"  {constraint.id}: {constraint.if_} -> {constraint.then}; "
+                    f"reason={constraint.reason}; {constraint.justification}"
+                )
         return "\n".join(lines)

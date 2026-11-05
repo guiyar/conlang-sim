@@ -18,6 +18,10 @@ class _Proxy:
         child = getattr(value, name)
         return _wrap(child, path, reads)
 
+    def __setattr__(self, name, value):
+        target = object.__getattribute__(self, "_value")
+        setattr(target, name, value)
+
     def __iter__(self):
         return iter(_wrap(value, f"{self._path}[]", self._reads) for value in self._value)
 
@@ -52,8 +56,18 @@ class AuditedIR:
                 continue
             if path in STRUCTURAL_FIELDS:
                 continue
-            normalized = path.replace("clause.arguments[].np.", "np.")
+            normalized = path.replace("clause.links[].clause.", "clause.")
+            normalized = normalized.replace("clause.links[].marker.", "source_token.")
+            normalized = normalized.replace("clause.links[].marker", "clause_link.marker")
+            normalized = normalized.replace("clause.arguments[].np.source_tokens[].", "source_token.")
+            normalized = normalized.replace("clause.arguments[].source_tokens[].", "source_token.")
+            normalized = normalized.replace("clause.arguments[].np.", "np.")
             normalized = normalized.replace("clause.arguments[].", "argument.")
+            normalized = normalized.replace("clause.source_tokens[].", "source_token.")
+            normalized = normalized.replace("np.source_tokens[].", "source_token.")
+            normalized = normalized.replace("source_tokens[].", "source_token.")
+            normalized = normalized.replace("np.post_modifiers[].np.", "np.")
+            normalized = normalized.replace("np.coordinated[].np.", "np.")
             normalized = normalized.replace("np.kind", "np.head.kind")
             normalized = normalized.replace("np.person", "np.pronoun.person")
             normalized = normalized.replace("np.gender", "np.pronoun.gender")

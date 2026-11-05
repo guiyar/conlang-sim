@@ -1,12 +1,85 @@
 """Austronesian profile realization from source-determined IR values."""
 
 from conlang.core.seeds import item_rng
+from conlang.core.ir import UNSPECIFIED
 from conlang.core.words import Morpheme, Word
+from types import MappingProxyType
 
-TAM_TABLES = {
-    "tense3": {"past": "past", "present": "present", "future": "future", "UNSPECIFIED": "present"},
-    "past_nonpast": {"past": "past", "present": "nonpast", "future": "nonpast", "UNSPECIFIED": "nonpast"},
-}
+TAM_TABLES = MappingProxyType({
+    "tense3": MappingProxyType({"past": "past", "present": "present", "future": "future", "UNSPECIFIED": "present"}),
+    "past_nonpast": MappingProxyType({"past": "past", "present": "nonpast", "future": "nonpast", "UNSPECIFIED": "nonpast"}),
+})
+
+PERSONAL_PRONOUN_TABLE = MappingProxyType({
+    ("1", "singular"): ("P1SG", "P1"), ("1", "plural"): ("P1PL", "P1"),
+    ("1", UNSPECIFIED): ("P1SG", "P1"), ("2", "singular"): ("P2", "P2"),
+    ("2", "plural"): ("P2", "P2"), ("2", UNSPECIFIED): ("P2", "P2"),
+    ("3", "singular"): ("P3SG", "P3"), ("3", "plural"): ("P3PL", "P3"),
+    ("3", UNSPECIFIED): ("P3SG", "P3"),
+    (UNSPECIFIED, "singular"): ("P2", "P2"), (UNSPECIFIED, "plural"): ("P2", "P2"),
+    (UNSPECIFIED, UNSPECIFIED): ("P2", "P2"),
+})
+VOICE_FOCUS_TABLE = MappingProxyType({"agent": "AF", "patient": "PF", "other": "AF"})
+
+
+def personal_pronoun_form(person, number, number_strategy):
+    sg_pl, unmarked = PERSONAL_PRONOUN_TABLE[(person, number)]
+    return sg_pl if number_strategy == "sg_pl" else unmarked
+
+
+def voice_focus(role):
+    return VOICE_FOCUS_TABLE[role]
+
+
+def article_label(system, definiteness):
+    table = {
+        "none": {"definite": None, "indefinite": None, "UNSPECIFIED": None, "none": None},
+        "definite_only": {"definite": "DEF", "indefinite": None, "UNSPECIFIED": None, "none": None},
+        "indefinite_only": {"definite": None, "indefinite": "INDEF", "UNSPECIFIED": None, "none": None},
+        "both": {"definite": "DEF", "indefinite": "INDEF", "UNSPECIFIED": None, "none": None},
+    }
+    return table[system][definiteness]
+
+
+_ONES_WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
+
+
+def _under_thousand(value):
+    result = []
+    if value >= 100:
+        hundreds = value // 100
+        if hundreds > 1:
+            result.append(_ONES_WORDS[hundreds])
+        result.append("hundred")
+        value %= 100
+    if value >= 20:
+        tens = value // 10
+        result.extend((_ONES_WORDS[tens], "ten"))
+        value %= 10
+    elif value >= 10:
+        result.append("ten")
+        value -= 10
+    if value:
+        result.append(_ONES_WORDS[value])
+    return result
+
+
+def numeral_words(value):
+    if not isinstance(value, int) or not 0 <= value < 1_000_000_000:
+        raise ValueError("numeral value must be an integer from 0 through 999,999,999")
+    if value == 0:
+        return ["zero"]
+    result = []
+    remainder = value
+    for scale, label in ((1_000_000, "million"), (1_000, "thousand")):
+        group, remainder = divmod(remainder, scale)
+        if group:
+            if group != 1:
+                result.extend(_under_thousand(group))
+            result.append(label)
+    if remainder:
+        result.extend(_under_thousand(remainder))
+    return result
 
 
 def tam_category(system, tense, perfect, progressive):
@@ -20,32 +93,147 @@ def tam_category(system, tense, perfect, progressive):
 
 
 class Realizer:
-    def __init__(self, features, phonology, seed, language_id, output_version):
+    MORPH_ORDER = (
+        "DEF", "INDEF", "NOM", "ERG", "NEG", "P1SG", "P1PL", "P2", "P3SG", "P3PL",
+        "P1", "P3", "PAST", "PRESENT", "FUTURE", "NONPAST", "PERF", "CONT", "IMPF",
+        "AF", "PF", "PASS", "GEN", "OBL", "PL", "LINK", "PROX", "DIST", "QUESTION",
+    )
+
+    def __init__(self, features, phonology, seed, language_id, output_version, closed_class=()):
         self.features, self.phonology = features, phonology
         self.seed, self.language_id, self.output_version = seed, language_id, output_version
+        self.closed_class = tuple(closed_class)
         self.forms = {}
+        self.closed_forms = {}
         self._create_forms()
 
+    def _active_morphs(self):
+        names = []
+        alignment = self.features["alignment"]
+        if self.features["case_particles"] == "preposed":
+            if alignment == "symmetrical_voice":
+                names.extend(("NOM", "GEN", "OBL"))
+            elif alignment == "ergative":
+                names.append("ERG")
+            elif alignment == "active_passive":
+                names.append("NOM")
+        if alignment == "symmetrical_voice":
+            names.extend(("AF", "PF"))
+        elif alignment == "active_passive":
+            names.extend(("AF", "PASS"))
+        tam = {
+            "tense3": ("PAST", "PRESENT", "FUTURE"),
+            "past_nonpast": ("PAST", "NONPAST"),
+            "aspect3": ("CONT", "PERF", "IMPF"),
+        }[self.features["tam_system"]]
+        names.extend(tam)
+        if self.features["noun_number"] == "particle":
+            names.append("PL")
+        if self.features["linker"] == "particle":
+            names.append("LINK")
+        if self.features["demonstratives"] == "two_way":
+            names.extend(("PROX", "DIST"))
+        if self.features["question"] != "none":
+            names.append("QUESTION")
+        names.append("NEG")
+        names.extend(("P1SG", "P1PL", "P2", "P3SG", "P3PL") if self.features["pronoun_number"] == "sg_pl" else ("P1", "P2", "P3"))
+        if self.features["articles"] in {"both", "definite_only"}:
+            names.append("DEF")
+        if self.features["articles"] in {"both", "indefinite_only"}:
+            names.append("INDEF")
+        needed = set(names)
+        return [name for name in self.MORPH_ORDER if name in needed]
+
+    def _new_form(self, rng, name):
+        voice_affix = name in {"AF", "PF", "PASS"} and self.features.get("voice_affix_position") is not None
+        tam_affix = name in {"PAST", "PRESENT", "FUTURE", "NONPAST", "PERF", "CONT", "IMPF"} and self.features["tam_exponence"] == "affix"
+        affix_position = self.features.get("voice_affix_position", "prefix") if voice_affix else self.features.get("tam_affix_position", "prefix")
+        if (voice_affix or tam_affix) and affix_position == "infix":
+            return rng.choice(self.phonology.vowels) + rng.choice(self.phonology.codas)
+        if voice_affix or tam_affix:
+            vowel = rng.choice(self.phonology.vowels)
+            consonant = rng.choices(self.phonology.consonants, self.phonology.consonant_weights, k=1)[0]
+            return consonant + vowel
+        count = 1 if name in {"DEF", "INDEF"} or rng.random() < 0.90 else 2
+        return "".join(self.phonology.make_syllable(rng, allow_vowel_initial=index == 0, shape="function")
+                       for index in range(count))
+
+    def _short_form_groups(self, name, form_class):
+        consonant_weights = dict(zip(self.phonology.consonants, self.phonology.consonant_weights))
+        vowel_weights = dict(zip(self.phonology.vowels, self.phonology.vowel_weights))
+        coda_weights = dict(zip(self.phonology.codas, self.phonology.coda_weights))
+        voice_affix = name in {"AF", "PF", "PASS"} and self.features.get("voice_affix_position") is not None
+        tam_affix = name in {"PAST", "PRESENT", "FUTURE", "NONPAST", "PERF", "CONT", "IMPF"} and self.features["tam_exponence"] == "affix"
+        if form_class == "morph" and (voice_affix or tam_affix):
+            position = self.features.get("voice_affix_position", "prefix") if voice_affix else self.features.get("tam_affix_position", "prefix")
+            if position == "infix":
+                return {"VC": [(vowel + coda, vowel_weights[vowel] * coda_weights[coda])
+                                for vowel in self.phonology.vowels for coda in self.phonology.codas]}
+            return {"CV": [(consonant + vowel, consonant_weights[consonant] * vowel_weights[vowel])
+                            for consonant in self.phonology.consonants for vowel in self.phonology.vowels]}
+        groups = {
+            "CV": [(consonant + vowel, consonant_weights[consonant] * vowel_weights[vowel])
+                   for consonant in self.phonology.consonants for vowel in self.phonology.vowels],
+            "V": [(vowel, vowel_weights[vowel]) for vowel in self.phonology.vowels]
+                 if self.features["word_initial_vowel"] == "yes" else [],
+            "CVC": [(consonant + vowel + coda, consonant_weights[consonant] * vowel_weights[vowel] * coda_weights[coda])
+                    for consonant in self.phonology.consonants
+                    for vowel in self.phonology.vowels for coda in self.phonology.codas]
+                    if self.features["syllable_structure"] != "open" else [],
+        }
+        return {key: values for key, values in groups.items() if values}
+
+    def _unique_form(self, rng, name, used, make_form, form_class="particle"):
+        short_groups = self._short_form_groups(name, form_class)
+        shape_weights = {"CV": 0.60, "V": 0.30, "CVC": 0.10, "VC": 1.0}
+        for _ in range(64):
+            available_groups = {
+                key: [(candidate, weight) for candidate, weight in candidates if candidate not in used]
+                for key, candidates in short_groups.items()
+            }
+            available_groups = {key: candidates for key, candidates in available_groups.items() if candidates}
+            if available_groups:
+                shapes = list(available_groups)
+                shape = rng.choices(shapes, [shape_weights[key] for key in shapes], k=1)[0]
+                candidates, weights = zip(*available_groups[shape])
+                return rng.choices(candidates, weights=weights, k=1)[0]
+            form = make_form(rng)
+            if form not in used:
+                return form
+        fallback = item_rng(self.seed, self.language_id, self.output_version, "morph", f"{name}:fallback")
+        for _ in range(64):
+            form = make_form(fallback) + self.phonology.make_syllable(fallback, shape="function")
+            if form not in used:
+                return form
+        raise RuntimeError(f"could not generate unique function form for {name}")
+
     def _create_forms(self):
-        names = ["NOM", "GEN", "OBL", "ERG", "AF", "PF", "PASS", "PAST", "PRESENT", "FUTURE",
-                 "NONPAST", "PERF", "PROG", "CONT", "IMPF", "PL", "LINK", "PROX", "DIST",
-                 "QUESTION", "NEG", "OBJ", "SUBJ", "IOBJ", "CLITIC", "P1SG", "P1PL", "P2", "P3SG", "P3PL", "P1", "P3"]
-        for name in names:
+        used = set()
+        for name in self._active_morphs():
             rng = item_rng(self.seed, self.language_id, self.output_version, "morph", name)
-            voice_affix = name in {"AF", "PF", "PASS"} and self.features.get("voice_affix_position") is not None
-            tam_affix = name in {"PAST", "PRESENT", "FUTURE", "NONPAST", "PERF", "PROG", "CONT", "IMPF"} and self.features["tam_exponence"] == "affix"
-            pronoun_form = name in {"P1SG", "P1PL", "P2", "P3SG", "P3PL", "P1", "P3"}
-            if voice_affix and self.features["voice_affix_position"] == "infix":
-                form = rng.choice(self.phonology.vowels) + rng.choice(self.phonology.codas)
-            elif voice_affix or tam_affix or pronoun_form:
-                form = rng.choice(self.phonology.consonants) + rng.choice(self.phonology.vowels)
-            else:
-                count = rng.choice([1, 1, 2])
-                form = "".join(self.phonology.make_syllable(rng) for _ in range(count))
+            form = self._unique_form(rng, name, used, lambda source_rng: self._new_form(source_rng, name), "morph")
             self.forms[name] = form
+            used.add(form)
+        for lemma, pos in self.closed_class:
+            key = (lemma, pos)
+            rng = item_rng(self.seed, self.language_id, self.output_version, "fn", f"{lemma}/{pos}")
+            form = self._unique_form(rng, f"fn:{lemma}/{pos}", used,
+                                     lambda source_rng: self.phonology.make_root(source_rng, lemma, pos, shape="function"),
+                                     "function")
+            self.closed_forms[key] = form
+            used.add(form)
 
     def function_forms(self):
-        return set(self.forms.values())
+        return set(self.forms.values()) | set(self.closed_forms.values())
+
+    def function_morphs(self):
+        forms = dict(self.forms)
+        for (lemma, pos), form in self.closed_forms.items():
+            key = lemma.upper()
+            if key in forms:
+                key = f"{key}/{pos}"
+            forms[key] = form
+        return forms
 
     def _m(self, name, kind=None):
         kind = kind or ("particle" if name in {"NOM", "GEN", "OBL", "ERG", "QUESTION", "NEG", "PL", "LINK", "PROX", "DIST"} else "prefix")
@@ -55,157 +243,279 @@ class Realizer:
         form = lexicon.root(lemma, pos)
         return Word([Morpheme(tuple(self.phonology.segments(form)), lemma.upper(), "root")])
 
-    def _np_words(self, np, relation, role, lexicon, audit):
-        kind = np.kind
-        if kind == "proper":
-            head = Word([Morpheme((np.surface or np.head,), np.surface or np.head, "root")], literal=True)
-        elif kind == "number":
-            head = Word([Morpheme((np.surface or np.head,), np.surface or np.head, "root")], literal=True)
-        elif kind == "pronoun":
-            person, number = np.person, np.number
-            audit(np.person); audit(np.number)
-            if self.features["pronoun_number"] == "sg_pl":
-                form_id = {("1", "singular"): "P1SG", ("1", "plural"): "P1PL", ("2", "singular"): "P2", ("2", "plural"): "P2", ("2", "UNSPECIFIED"): "P2", ("3", "singular"): "P3SG", ("3", "plural"): "P3PL"}.get((person, number), "P3SG")
-            else:
-                form_id = {"1": "P1", "2": "P2", "3": "P3"}.get(person, "P3")
-            head = Word([Morpheme(tuple(self.phonology.segments(self.forms[form_id])), form_id, "root")])
-        elif kind == "demonstrative_pronoun" and self.features["demonstratives"] == "two_way":
-            audit(np.demonstrative)
-            head = self._root(np.head, "NOUN", lexicon)
-            head.add_prefix(self._m("PROX" if np.demonstrative == "proximal" else "DIST", "particle"))
-        else:
-            head = self._root(np.head, "NOUN", lexicon)
+    @staticmethod
+    def _dispose(token, disposition, reason=None):
+        if token is not None and token.disposition is None:
+            token.disposition = disposition
+            token.disposition_reason = reason
 
-        if kind == "demonstrative_pronoun":
-            audit(np.demonstrative)
-        if kind not in {"pronoun", "proper", "number"}:
-            audit(np.number)
-            if np.number == "plural":
-                number = self.features["noun_number"]
-                if number == "particle":
-                    head.add_suffix(self._m("PL"))
-                elif number in {"full_reduplication", "partial_reduplication"}:
-                    head.reduplicate(number == "partial_reduplication", self.phonology.syllabify)
-        modifier_words = []
-        audit(np.modifiers)
-        modifier_values = list(np.modifiers)
-        if self.features["demonstratives"] == "two_way" and np.demonstrative != "none":
-            modifier_values = [value for value in modifier_values if getattr(value, "lemma", value).lower() not in {"this", "that", "these", "those"}]
-        for modifier in modifier_values:
-            modifier_kind = getattr(modifier, "kind", "modifier")
-            modifier_text = getattr(modifier, "text", modifier)
-            modifier_lemma = getattr(modifier, "lemma", modifier_text).lower()
-            if modifier_kind in {"numeral", "proper"}:
-                modifier_words.append(Word([Morpheme((modifier_text,), modifier_text, "root")], literal=True))
-            else:
-                modifier_words.append(self._root(modifier_lemma, "ADJ", lexicon))
-        if self.features["modifier_position"] == "before":
-            words = modifier_words + [head]
+    def _lexical_word(self, lemma, pos, lexicon, gloss=None):
+        form = self.phonology.segments(lexicon.root(lemma, pos))
+        return Word([Morpheme(tuple(form), gloss or lemma.upper(), "root")])
+
+    def _literal_word(self, text):
+        return Word([Morpheme((text,), text, "root")], literal=True)
+
+    def _number_words(self, value, lexicon, rules, fallback_text=None):
+        if value is None:
+            raw_words = [part.lower() for part in (fallback_text or "").replace("-", " ").split() if part.lower() != "and"]
+            rules.append("unparsed numeral realized as individual NUM roots")
+            names = raw_words
         else:
-            words = [head] + modifier_words
-            if modifier_words and self.features.get("linker") == "particle":
-                words.insert(1, self._function_word("LINK"))
-        if kind != "demonstrative_pronoun" and np.demonstrative != "none":
-            audit(np.demonstrative)
-            if self.features["demonstratives"] == "two_way":
-                words.insert(0, self._function_word("PROX" if np.demonstrative == "proximal" else "DIST"))
-        audit(np.possessor)
-        if np.possessor:
-            possessor = self._root(str(np.possessor).lower(), "NOUN", lexicon)
-            words = ([possessor] + words) if self.features["possessor_position"] == "before" else (words + [possessor])
-        return words
+            names = numeral_words(value)
+        return [self._root(name, "NUM", lexicon) for name in names]
+
+    def _pronoun_label(self, np):
+        return personal_pronoun_form(np.person, np.number, self.features["pronoun_number"])
+
+    def _np_words(self, np, lexicon, rules):
+        kind = np.kind
+        if kind == "proper" or np.literal:
+            head_words = [self._literal_word(np.surface or np.head)]
+        elif kind == "number":
+            if np.numeral_value is not None:
+                head_words = self._number_words(np.numeral_value, lexicon, rules, np.surface)
+            elif np.literal:
+                head_words = [self._literal_word(np.surface or np.head)]
+            else:
+                head_words = self._number_words(None, lexicon, rules, np.surface or np.head)
+        elif kind == "pronoun":
+            form_id = self._pronoun_label(np)
+            head_words = [Word([Morpheme(tuple(self.phonology.segments(self.forms[form_id])), form_id, "root")])]
+        elif kind == "demonstrative_pronoun" and self.features["demonstratives"] == "two_way":
+            head_words = [self._function_word("PROX" if np.demonstrative == "proximal" else "DIST")]
+        else:
+            head_pos = np.pos or ("PRON" if kind in {"wh_pronoun", "other_pronoun", "demonstrative_pronoun"} else "NOUN")
+            head_words = [self._lexical_word(np.head, head_pos, lexicon)]
+
+        if kind not in {"pronoun", "proper", "number", "wh_pronoun", "other_pronoun", "demonstrative_pronoun"} and np.number == "plural":
+            number_strategy = self.features["noun_number"]
+            if number_strategy == "particle":
+                head_words.append(self._function_word("PL"))
+            elif number_strategy in {"full_reduplication", "partial_reduplication"}:
+                head_words[0].reduplicate(number_strategy == "partial_reduplication", self.phonology.syllabify)
+
+        modifier_groups = []
+        for modifier in np.modifiers:
+            modifier_kind = modifier.kind
+            if modifier.literal or any(char.isdigit() for char in modifier.text):
+                group = [self._literal_word(modifier.text)]
+            elif modifier_kind == "numeral":
+                group = self._number_words(modifier.value, lexicon, rules, modifier.text)
+            else:
+                group = [self._lexical_word(modifier.lemma.lower(), modifier.pos or "ADJ", lexicon)]
+                sub_words = [self._lexical_word(item.lemma.lower(), item.pos or "ADV", lexicon) for item in modifier.sub_modifiers]
+                group = sub_words + group
+            modifier_groups.append(group)
+        modifier_words = [word for group in modifier_groups for word in group]
+
+        demo_particle = []
+        if kind != "demonstrative_pronoun" and np.demonstrative != "none" and self.features["demonstratives"] == "two_way":
+            demo_particle = [self._function_word("PROX" if np.demonstrative == "proximal" else "DIST")]
+        elif kind != "demonstrative_pronoun" and np.demonstrative != "none":
+            demonstrative_token = next(
+                (token for token in np.source_tokens if "Dem" in token.morph.get("PronType", ())),
+                None,
+            )
+            if demonstrative_token is not None:
+                demo_particle = [self._lexical_word(demonstrative_token.lemma.lower(), demonstrative_token.pos or "DET", lexicon)]
+        if self.features["modifier_position"] == "before":
+            core_words = modifier_words + head_words
+        else:
+            core_words = list(head_words)
+            if modifier_words and self.features["linker"] == "particle":
+                core_words.append(self._function_word("LINK"))
+            core_words.extend(modifier_words)
+        core_words = demo_particle + core_words
+
+        article = None
+        if self.features["articles"] != "none":
+            article = article_label(self.features["articles"], np.definiteness)
+        if article and self.features["article_position"] == "before":
+            core_words.insert(0, self._function_word(article))
+        elif article:
+            core_words.append(self._function_word(article))
+
+        if np.possessor is not None:
+            possessor_words = self._np_words(np.possessor.np, lexicon, rules)
+            if self.features["possessor_position"] == "before":
+                core_words = possessor_words + core_words
+            else:
+                core_words.extend(possessor_words)
+
+        for post_modifier in np.post_modifiers:
+            if post_modifier.kind == "prep":
+                if post_modifier.adposition:
+                    core_words.append(self._lexical_word(post_modifier.adposition, "ADP", lexicon))
+                if post_modifier.np is not None:
+                    core_words.extend(self._np_words(post_modifier.np, lexicon, rules))
+            elif post_modifier.kind == "clause" and post_modifier.link is not None:
+                core_words.extend(self._realize_link(post_modifier.link, lexicon, rules))
+
+        for coordination in np.coordinated:
+            if coordination.conj is not None:
+                conj = coordination.conj
+                core_words.append(self._lexical_word(conj.lemma.lower(), conj.pos or "CCONJ", lexicon))
+                self._dispose(conj, "realized")
+            core_words.extend(self._np_words(coordination.np, lexicon, rules))
+
+        for token in np.source_tokens:
+            if token.disposition is None:
+                if token.dep == "det" and token.morph.get("Definite"):
+                    label = article_label(self.features["articles"], "definite" if "Def" in token.morph.get("Definite", ()) else "indefinite") if self.features["articles"] != "none" else None
+                    self._dispose(token, "realized" if label else "absorbed", None if label else "article distinction merged")
+                else:
+                    self._dispose(token, "realized")
+        return core_words
 
     def _function_word(self, name):
         return Word([self._m(name, "particle")])
 
-    def realize(self, ir, lexicon, audit=lambda value: None):
-        clause = ir.clause
-        audit(clause.predicate)
-        audit(clause.arguments)
-        if clause.fragments:
-            words = [Word([Morpheme((token,), token, "root")], literal=True) for fragment in clause.fragments for token in fragment]
-            return words, list(ir.rules) + ["Fragment fallback: source tokens emitted word-by-word."]
+    def _realize_link(self, link, lexicon, rules):
+        words = []
+        if link.marker is not None:
+            marker = link.marker
+            words.append(self._lexical_word(marker.lemma.lower(), marker.pos or "SCONJ", lexicon))
+            self._dispose(marker, "realized")
+        words.extend(self._realize_clause(link.clause, lexicon, rules))
+        return words
 
-        verb = self._root(clause.predicate, clause.predicate_pos or "VERB", lexicon)
-        if clause.kind in {"equational", "locative", "existential"} and clause.predicate == "be":
-            verb = None
-        audit(clause.voice); audit(clause.transitivity)
+    def _realize_clause(self, clause, lexicon, rules):
+        verb = None
+        if not (clause.predicate == "be" and clause.kind in {"equational", "locative", "existential"}):
+            verb = self._root(clause.predicate, clause.predicate_pos or "VERB", lexicon)
+        if verb is not None and self.features["imperfective_reduplication"] == "yes":
+            category = tam_category(self.features["tam_system"], clause.tense, clause.perfect, clause.progressive)
+            if category == "imperfective":
+                verb.reduplicate(True, self.phonology.syllabify)
+
         alignment = self.features["alignment"]
-        if alignment == "symmetrical_voice":
-            subject_role = next((arg.role for arg in clause.arguments if arg.relation == "subject"), "other")
-            affix = "AF" if subject_role == "agent" else "PF"
-            self._apply_affix(verb, affix)
-        elif alignment == "active_passive":
+        if alignment == "symmetrical_voice" and verb is not None:
+            pivot = next((argument for argument in clause.arguments if argument.relation == "subject"), None)
+            role = pivot.role if pivot is not None else "other"
+            self._apply_affix(verb, voice_focus(role))
+        elif alignment == "active_passive" and verb is not None:
             self._apply_affix(verb, "PASS" if clause.voice == "passive" else "AF")
-        audit(clause.tense); audit(clause.perfect); audit(clause.progressive)
-        tam = tam_category(self.features["tam_system"], clause.tense, clause.perfect, clause.progressive)
+
+        category = tam_category(self.features["tam_system"], clause.tense, clause.perfect, clause.progressive)
+        tam_name = {"past": "PAST", "present": "PRESENT", "future": "FUTURE", "nonpast": "NONPAST",
+                    "contemplated": "CONT", "perfective": "PERF", "imperfective": "IMPF"}[category]
+        tam_particle = None
         if self.features["tam_exponence"] == "particle":
-            tam_word = self._function_word({"past": "PAST", "present": "PRESENT", "future": "FUTURE", "nonpast": "NONPAST", "contemplated": "CONT", "perfective": "PERF", "imperfective": "IMPF"}[tam])
+            tam_particle = self._function_word(tam_name)
         else:
-            name = {"past": "PAST", "present": "PRESENT", "future": "FUTURE", "nonpast": "NONPAST", "contemplated": "CONT", "perfective": "PERF", "imperfective": "IMPF"}[tam]
-            self._apply_affix(verb, name, self.features.get("tam_affix_position", "prefix"))
-            tam_word = None
-        if self.features.get("imperfective_reduplication") == "yes" and tam == "imperfective" and verb:
-            verb.reduplicate(True, self.phonology.syllabify)
-        audit(clause.mood); audit(clause.polarity)
+            self._apply_affix(verb, tam_name, self.features.get("tam_affix_position", "prefix"))
+
         initial = []
         final = []
         if clause.mood == "interrogative" and self.features["question"] != "none":
-            target = initial if self.features["question"] == "particle_initial" else final
-            target.append(self._function_word("QUESTION"))
-        if clause.polarity == "negative":
-            if self.features["negation"] == "clause_initial_particle":
-                initial.append(self._function_word("NEG"))
+            (initial if self.features["question"] == "particle_initial" else final).append(self._function_word("QUESTION"))
+        if clause.polarity == "negative" and self.features["negation"] == "clause_initial_particle":
+            initial.append(self._function_word("NEG"))
+
         argument_words = []
         second_position_clitics = []
         for argument in clause.arguments:
-            audit(argument.relation); audit(argument.role)
-            np_words = self._np_words(argument.np, argument.relation, argument.role, lexicon, audit)
-            pronoun_word = np_words[0] if argument.np.kind == "pronoun" and np_words else None
-            if self.features["case_particles"] == "preposed":
+            words = self._np_words(argument.np, lexicon, rules)
+            is_core = argument.relation in {"subject", "object", "indirect_object"}
+            is_personal = argument.np.kind == "pronoun"
+            case_bearing_pivot = (
+                self.features["case_particles"] == "preposed"
+                and alignment in {"symmetrical_voice", "active_passive"}
+                and argument.relation == "subject"
+            )
+            cliticized = (
+                is_core and is_personal and not case_bearing_pivot
+                and self.features["pronoun_strategy"] in {"clitic_verb", "clitic_second"}
+            )
+            if cliticized:
+                pronoun_word = next((word for word in words if word.morphemes and word.morphemes[0].gloss.startswith("P")), None)
+                if pronoun_word is not None:
+                    words.remove(pronoun_word)
+                    if self.features["pronoun_strategy"] == "clitic_verb" and verb is not None:
+                        for morpheme in pronoun_word.morphemes:
+                            verb.cliticize(Morpheme(morpheme.segments, morpheme.gloss, "clitic"))
+                    elif self.features["pronoun_strategy"] == "clitic_second":
+                        second_position_clitics.append(pronoun_word)
+                    else:
+                        words.append(pronoun_word)
+
+            if not cliticized and self.features["case_particles"] == "preposed":
                 case = self._case(alignment, argument, clause)
                 if case:
-                    np_words.insert(0, self._function_word(case))
-            elif argument.relation in {"oblique", "indirect_object"} and argument.preposition:
-                np_words.insert(0, self._root(argument.preposition, "ADP", lexicon))
-            if pronoun_word and self.features["pronoun_strategy"] == "clitic_verb" and verb:
-                np_words.remove(pronoun_word)
-                for morpheme in pronoun_word.morphemes:
-                    verb.cliticize(Morpheme(morpheme.segments, morpheme.gloss, "clitic"))
-            elif pronoun_word and self.features["pronoun_strategy"] == "clitic_second":
-                second_position_clitics.append(pronoun_word)
-                np_words.remove(pronoun_word)
-            argument_words.append((argument.relation, np_words))
-        verb_slot = [verb] if verb else []
-        before_verb = initial + ([tam_word] if tam_word else [])
-        preverbal = [self._function_word("NEG")] if self.features["negation"] == "preverbal_particle" and clause.polarity == "negative" else []
+                    words.insert(0, self._function_word(case))
+                elif argument.preposition and argument.relation in {"oblique", "indirect_object"}:
+                    words.insert(0, self._lexical_word(argument.preposition, "ADP", lexicon))
+            elif not cliticized and argument.preposition and argument.relation in {"oblique", "indirect_object"}:
+                words.insert(0, self._lexical_word(argument.preposition, "ADP", lexicon))
+            if argument.source_tokens:
+                for token in argument.source_tokens:
+                    self._dispose(token, "realized")
+            argument_words.append((argument.relation, words))
+
+        subjects = [word for relation, words in argument_words if relation == "subject" for word in words]
+        other_arguments = [word for relation, words in argument_words if relation != "subject" for word in words]
+        adverbs = [self._lexical_word(adverb.lemma.lower(), adverb.pos or "ADV", lexicon) for adverb in clause.adverbs]
+        predicate_token = next(
+            (token for token in clause.source_tokens if token.lemma.lower() == clause.predicate and token.pos in {"VERB", "AUX"}),
+            None,
+        )
+        for token in clause.source_tokens:
+            if (token.dep == "advmod" and predicate_token is not None
+                    and token.head_index == predicate_token.index and token.text.lower() not in {"not", "n't"}):
+                self._dispose(token, "realized")
+        verb_slot = [verb] if verb is not None else []
+        preverbal_negation = [self._function_word("NEG")] if clause.polarity == "negative" and self.features["negation"] == "preverbal_particle" else []
+        verb_prefix = ([tam_particle] if tam_particle else []) + preverbal_negation
         order = self.features["clause_order"]
-        subjects = [w for rel, words in argument_words if rel == "subject" for w in words]
-        objects = [w for rel, words in argument_words if rel in {"object", "indirect_object", "oblique"} for w in words]
-        audit(clause.adverbs)
-        objects.extend(self._root(adverb, "ADV", lexicon) for adverb in clause.adverbs)
         if order == "VSO":
-            sequence = before_verb + preverbal + verb_slot + subjects + objects
+            sequence = initial + verb_prefix + verb_slot + subjects + other_arguments + adverbs
         elif order == "VOS":
-            sequence = before_verb + preverbal + verb_slot + objects + subjects
+            sequence = initial + verb_prefix + verb_slot + other_arguments + subjects + adverbs
         elif order == "SOV":
-            sequence = before_verb + subjects + objects + preverbal + verb_slot
+            sequence = initial + subjects + other_arguments + verb_prefix + verb_slot + adverbs
         else:
-            sequence = before_verb + subjects + preverbal + verb_slot + objects
+            sequence = initial + subjects + verb_prefix + verb_slot + other_arguments + adverbs
         sequence += final
+
         for clitic_word in second_position_clitics:
             if sequence:
-                target = sequence[min(1, len(sequence) - 1)]
+                target = sequence[1] if len(sequence) > 1 else sequence[0]
                 for morpheme in clitic_word.morphemes:
                     target.cliticize(Morpheme(morpheme.segments, morpheme.gloss, "clitic"))
             else:
                 sequence.append(clitic_word)
-        if not sequence and clause.source_tokens:
-            sequence = [Word([Morpheme(tuple(t.text), t.text, "root")]) for t in clause.source_tokens]
+
+        self._dispose(predicate_token, "realized")
+        for token in clause.source_tokens:
+            if token.pos == "AUX" or token.dep in {"aux", "auxpass"}:
+                self._dispose(token, "absorbed", "auxiliary contributes tense, aspect, or voice")
+            elif token.dep == "neg" or token.text.lower() in {"not", "n't"}:
+                self._dispose(token, "absorbed", "polarity particle")
+            elif token.pos == "PUNCT":
+                self._dispose(token, "absorbed", "punctuation")
+
+        for link in clause.links:
+            sequence.extend(self._realize_link(link, lexicon, rules))
+        return sequence
+
+    def realize(self, ir, lexicon):
         rules = list(ir.rules)
-        for word in sequence:
-            if word:
-                word._validator = self.phonology.validate_surface
+        sequence = self._realize_clause(ir.clause, lexicon, rules)
+        for token in ir.source_tokens:
+            if token.disposition is not None:
+                continue
+            if token.pos == "PUNCT" or token.text and not any(char.isalnum() for char in token.text):
+                self._dispose(token, "absorbed", "punctuation")
+            elif token.pos == "AUX" or token.dep in {"aux", "auxpass", "neg"}:
+                self._dispose(token, "absorbed", "grammatical auxiliary or polarity marker")
+            else:
+                if any(char.isdigit() for char in token.text) or token.pos == "PROPN":
+                    sequence.append(self._literal_word(token.text))
+                else:
+                    sequence.append(self._lexical_word((token.lemma or token.text).lower(), token.pos or "X", lexicon))
+                self._dispose(token, "realized")
+                rules.append(f"residual token: {token.text}")
         return sequence, rules
 
     def _apply_affix(self, word, name, position=None):
@@ -225,10 +535,11 @@ class Realizer:
     @staticmethod
     def _case(alignment, argument, clause):
         if alignment == "symmetrical_voice":
-            pivot_role = next((a.role for a in clause.arguments if a.relation == "subject"), "other")
-            if argument.role == pivot_role:
+            if argument.relation == "subject":
                 return "NOM"
-            return "OBL" if argument.relation == "oblique" else "GEN"
+            if argument.relation in {"object", "indirect_object"} or argument.role == "agent":
+                return "GEN"
+            return "OBL"
         if alignment == "ergative" and clause.transitivity and argument.role == "agent":
             return "ERG"
         if alignment == "active_passive" and argument.relation == "subject":

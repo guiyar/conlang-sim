@@ -6,7 +6,7 @@ from conlang.core.render import render
 
 def test_same_seed_input_repeats_identically():
     profile = discover_languages()["austronesian"]
-    outputs = [render(Translator(profile, 42).translate("The children saw a bird.").words) for _ in range(2)]
+    outputs = [render(Translator(profile, 42).translate("The children saw a bird.")[0].words) for _ in range(2)]
     assert outputs[0] == outputs[1]
 
 
@@ -27,7 +27,7 @@ def test_feature_assignments_and_output_vary_across_seed_sweep():
     assignments = [profile.catalog.sample(seed) for seed in range(200)]
     for feature in profile.catalog.features:
         assert len({assignment[feature.id] for assignment in assignments}) > 1, feature.id
-    outputs = {render(Translator(profile, seed).translate("We see the birds.").words) for seed in range(200)}
+    outputs = {render(Translator(profile, seed).translate("We see the birds.")[0].words) for seed in range(200)}
     assert len(outputs) >= 50
 
 
@@ -37,3 +37,19 @@ def test_lexicon_separates_language_ids():
     first = Lexicon(7, profile.language_id, profile.output_version, profile.phonology_class(profile.catalog.sample(7), 7, profile.language_id, profile.output_version))
     other = Lexicon(7, "other_language", profile.output_version, phonology)
     assert first.root("bird", "NOUN") != other.root("bird", "NOUN")
+
+
+def test_gloss_is_invariant_when_only_form_parameters_change():
+    profile = discover_languages()["austronesian"]
+    assignment = profile.catalog.sample(109)
+    meaning_features = {
+        feature.id: assignment[feature.id]
+        for feature in profile.catalog.features
+        if feature.meaning_bearing and assignment[feature.id] is not None
+    }
+    sentence = "The children were seen by Mina."
+    outputs = []
+    for seed in range(20):
+        result = Translator(profile, seed, fixed=meaning_features).translate(sentence)[0]
+        outputs.append([word.gloss() for word in result.words])
+    assert len({tuple(output) for output in outputs}) == 1

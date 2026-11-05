@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
-VALID_KINDS = {"root", "prefix", "suffix", "infix", "clitic", "particle", "reduplicant", "epenthetic"}
+VALID_KINDS = frozenset({"root", "prefix", "suffix", "infix", "clitic", "particle", "reduplicant", "epenthetic"})
 
 
 @dataclass
@@ -86,28 +86,71 @@ class Word:
             if operation == "insert":
                 insertions.extend((start, segment) for segment in segments[target_start:target_end])
         for position, segment in reversed(insertions):
-            offset = 0
-            inserted = False
-            for index, morpheme in enumerate(self.morphemes):
-                if offset == position:
-                    self.morphemes.insert(index, Morpheme((segment,), "EPENTH", "epenthetic"))
-                    inserted = True
-                    break
-                offset += len(morpheme.segments)
-                if offset == position:
-                    self.morphemes.insert(index + 1, Morpheme((segment,), "EPENTH", "epenthetic"))
-                    inserted = True
-                    break
-            if not inserted and position >= offset:
-                self.morphemes.append(Morpheme((segment,), "EPENTH", "epenthetic"))
-            elif not inserted:
-                target = next((m for m in self.morphemes if m.kind == "root"), self.morphemes[0])
-                target.segments = tuple(target.segments) + (segment,)
-        self._surface_form = "".join(segments)
+            layout = []
+            index = 0
+            while index < len(self.morphemes):
+                morpheme = self.morphemes[index]
+                following = self.morphemes[index + 1] if index + 1 < len(self.morphemes) else None
+                if morpheme.kind == "root" and following is not None and following.kind == "infix":
+                    infix_position = following.position if following.position is not None else 1
+                    layout.extend((index, local) for local in range(min(infix_position, len(morpheme.segments))))
+                    layout.extend((index + 1, local) for local in range(len(following.segments)))
+                    layout.extend((index, local) for local in range(min(infix_position, len(morpheme.segments)), len(morpheme.segments)))
+                    index += 2
+                else:
+                    layout.extend((index, local) for local in range(len(morpheme.segments)))
+                    index += 1
+            if position < len(layout):
+                morpheme_index, local_index = layout[position]
+            elif layout:
+                morpheme_index, local_index = layout[-1]
+                local_index += 1
+            else:
+                continue
+            target = self.morphemes[morpheme_index]
+            target.segments = target.segments[:local_index] + (segment,) + target.segments[local_index:]
+            if target.kind == "root" and morpheme_index + 1 < len(self.morphemes):
+                following = self.morphemes[morpheme_index + 1]
+                if following.kind == "infix" and local_index <= (following.position or 0):
+                    following.position = (following.position or 0) + 1
+        self._surface_form = "".join(self.segments)
         return self._surface_form
 
     def segmented(self):
-        return "-".join("".join(m.segments) for m in self.morphemes)
+        parts = []
+        index = 0
+        while index < len(self.morphemes):
+            morpheme = self.morphemes[index]
+            following = self.morphemes[index + 1] if index + 1 < len(self.morphemes) else None
+            if morpheme.kind == "root" and following is not None and following.kind == "infix":
+                position = following.position if following.position is not None else 1
+                part = (
+                    "".join(morpheme.segments[:position]) + "<" + "".join(following.segments) + ">"
+                    + "".join(morpheme.segments[position:])
+                )
+                parts.append(part)
+                index += 2
+            else:
+                parts.append("".join(morpheme.segments))
+                index += 1
+        return "-".join(parts)
 
     def gloss(self):
-        return "-".join(m.gloss for m in self.morphemes)
+        parts = []
+        index = 0
+        while index < len(self.morphemes):
+            morpheme = self.morphemes[index]
+            following = self.morphemes[index + 1] if index + 1 < len(self.morphemes) else None
+            if morpheme.kind == "root" and following is not None and following.kind == "infix":
+                parts.append(f"{morpheme.gloss}<{following.gloss}>")
+                index += 2
+            else:
+                parts.append(morpheme.gloss)
+                index += 1
+        return "-".join(parts)
+
+    @property
+    def morpheme_count(self):
+        import re
+
+        return len(re.findall(r"<[^<>]+>|[^<>-]+", self.gloss()))
