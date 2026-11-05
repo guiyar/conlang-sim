@@ -2,7 +2,15 @@
 
 from typing import Any
 
-from ..ir import Argument, Clause, ClauseLink, Modifier
+from ..ir import (
+    Argument,
+    ArgumentRelation,
+    Clause,
+    ClauseLink,
+    ClauseLinkRelation,
+    Modifier,
+    Polarity,
+)
 from ..roles import argument_role
 from .context import ParseContext
 from .grammar import GrammarAnalyzer
@@ -30,7 +38,7 @@ class ClauseBuilder:
                     child for child in prep.children if child.dep_ in {"pobj", "obj"}
                 )
         transitive = bool(core or passive_agents or voice == "passive")
-        relations = {
+        relations: dict[str, ArgumentRelation] = {
             "nsubj": "subject",
             "nsubjpass": "subject",
             "obj": "object",
@@ -96,7 +104,7 @@ class ClauseBuilder:
                 )
             )
         negation_heads = {root, *(child for child in children if child.dep_ in {"aux", "auxpass"})}
-        polarity = (
+        polarity: Polarity = (
             "negative"
             if any(child.dep_ == "neg" and child.head in negation_heads for child in root.subtree)
             else "positive"
@@ -135,13 +143,14 @@ class ClauseBuilder:
         for child in children:
             if child not in self.context.clause_heads or child is root:
                 continue
-            relation = {
+            link_relations: dict[str, ClauseLinkRelation] = {
                 "conj": "coordinate",
                 "advcl": "adverbial",
                 "ccomp": "complement",
                 "xcomp": "xcomp",
-            }.get(child.dep_)
-            if relation:
+            }
+            link_relation = link_relations.get(child.dep_)
+            if link_relation:
                 marker = next(
                     (item for item in child.children if item.dep_ in {"mark", "cc"}), None
                 )
@@ -153,7 +162,7 @@ class ClauseBuilder:
                     )
                 clause.links.append(
                     ClauseLink(
-                        relation,
+                        link_relation,
                         self.context.source_for(marker) if marker else None,
                         self.build_clause(child),
                         [

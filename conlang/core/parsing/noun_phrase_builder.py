@@ -6,8 +6,12 @@ from ..ir import (
     UNSPECIFIED,
     ClauseLink,
     Coordination,
+    Definiteness,
+    Demonstrative,
     Modifier,
     NounPhrase,
+    NounPhraseKind,
+    Number,
     Possessor,
     PostModifier,
 )
@@ -106,7 +110,10 @@ class NounPhraseBuilder:
         pron_types = set(token.morph.get("PronType"))
         person = GrammarAnalyzer.morph_value(token, "Person", {"1", "2", "3"})
         raw_number = GrammarAnalyzer.morph_value(token, "Number", {"sing", "plur"})
-        number = {"sing": "singular", "plur": "plural"}.get(raw_number, UNSPECIFIED)
+        number_values: dict[str, Number] = {"sing": "singular", "plur": "plural"}
+        number = number_values.get(raw_number, UNSPECIFIED)
+        np_kind: NounPhraseKind
+        demonstrative: Demonstrative
         if "Dem" in pron_types:
             np_kind = "demonstrative_pronoun" if token.pos_ == "PRON" else "noun"
             demonstrative = "proximal" if token.lemma_.lower() in {"this", "these"} else "distal"
@@ -132,7 +139,7 @@ class NounPhraseBuilder:
             "wh_pronoun",
             "other_pronoun",
         }:
-            definiteness = "none"
+            definiteness: Definiteness = "none"
             determiner = None
         else:
             determiner = next(
@@ -148,7 +155,11 @@ class NounPhraseBuilder:
                 if determiner
                 else UNSPECIFIED
             )
-            definiteness = {"def": "definite", "ind": "indefinite"}.get(definite, UNSPECIFIED)
+            definiteness_values: dict[str, Definiteness] = {
+                "def": "definite",
+                "ind": "indefinite",
+            }
+            definiteness = definiteness_values.get(definite, UNSPECIFIED)
             if any(
                 child.dep_ in {"poss", "nmod:poss"} or child.morph.get("Poss") == ["Yes"]
                 for child in token.children

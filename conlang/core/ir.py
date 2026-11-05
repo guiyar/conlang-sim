@@ -1,9 +1,34 @@
 """Language-independent parsed English representation."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from types import MappingProxyType
+from typing import Final, Literal, TypeAlias
 
-UNSPECIFIED = "UNSPECIFIED"
+UNSPECIFIED: Final = "UNSPECIFIED"
+
+Tense: TypeAlias = Literal["past", "present", "future", "UNSPECIFIED"]
+Polarity: TypeAlias = Literal["positive", "negative"]
+Voice: TypeAlias = Literal["active", "passive"]
+Mood: TypeAlias = Literal["declarative", "interrogative", "imperative"]
+ClauseKind: TypeAlias = Literal[
+    "verbal", "equational", "locative", "existential", "nominal", "rootless", "interjection"
+]
+NounPhraseKind: TypeAlias = Literal[
+    "noun", "pronoun", "proper", "number", "demonstrative_pronoun", "wh_pronoun", "other_pronoun"
+]
+Number: TypeAlias = Literal["singular", "plural", "UNSPECIFIED"]
+Demonstrative: TypeAlias = Literal["none", "proximal", "distal"]
+Definiteness: TypeAlias = Literal["definite", "indefinite", "none", "UNSPECIFIED"]
+Degree: TypeAlias = Literal["none", "comparative", "superlative"]
+ModifierKind: TypeAlias = Literal["modifier", "predeterminer", "numeral", "ordinal", "modal"]
+ArgumentRelation: TypeAlias = Literal["subject", "object", "indirect_object", "oblique", "fragment"]
+ArgumentRole: TypeAlias = Literal["agent", "patient", "other"]
+PostModifierKind: TypeAlias = Literal["prep", "clause"]
+ClauseLinkRelation: TypeAlias = Literal["coordinate", "adverbial", "complement", "xcomp"]
+TokenDisposition: TypeAlias = Literal["realized", "absorbed", "dropped"]
+
 STRUCTURAL_FIELDS = frozenset(
     {
         "clause.predicate",
@@ -154,10 +179,10 @@ class SourceToken:
     pos: str = ""
     tag: str = ""
     dep: str = ""
-    morph: dict = field(default_factory=dict)
+    morph: dict[str, tuple[str, ...]] = field(default_factory=dict)
     head_index: int | None = None
     index: int | None = None
-    disposition: str | None = None
+    disposition: TokenDisposition | None = None
     disposition_reason: str | None = None
 
 
@@ -165,78 +190,78 @@ class SourceToken:
 class Modifier:
     text: str
     lemma: str
-    kind: str = "modifier"
+    kind: ModifierKind = "modifier"
     pos: str = ""
     value: int | None = None
     literal: bool = False
-    sub_modifiers: list = field(default_factory=list)
-    indices: tuple = ()
-    degree: str = "none"
+    sub_modifiers: list[Modifier] = field(default_factory=list)
+    indices: tuple[int, ...] = ()
+    degree: Degree = "none"
 
 
 @dataclass
 class Possessor:
-    np: "NounPhrase"
+    np: NounPhrase
 
 
 @dataclass
 class PostModifier:
-    kind: str
+    kind: PostModifierKind
     adposition: str | None = None
-    np: "NounPhrase | None" = None
-    link: "ClauseLink | None" = None
+    np: NounPhrase | None = None
+    link: ClauseLink | None = None
     index: int | None = None
 
 
 @dataclass
 class Coordination:
     conj: SourceToken | None
-    np: "NounPhrase"
+    np: NounPhrase
 
 
 @dataclass
 class ClauseLink:
-    relation: str
+    relation: ClauseLinkRelation
     marker: SourceToken | None
-    clause: "Clause"
-    source_tokens: list = field(default_factory=list)
+    clause: Clause
+    source_tokens: list[SourceToken] = field(default_factory=list)
 
 
 @dataclass
 class NounPhrase:
     head: str
-    kind: str = "noun"
-    number: str = UNSPECIFIED
-    demonstrative: str = "none"
+    kind: NounPhraseKind = "noun"
+    number: Number = UNSPECIFIED
+    demonstrative: Demonstrative = "none"
     person: str = UNSPECIFIED
     gender: str = UNSPECIFIED
     case: str = UNSPECIFIED
-    modifiers: list = field(default_factory=list)
-    possessor: object = None
-    post_modifiers: list = field(default_factory=list)
-    coordinated: list = field(default_factory=list)
-    source_tokens: list = field(default_factory=list)
-    morphology: dict = field(default_factory=dict)
+    modifiers: list[Modifier] = field(default_factory=list)
+    possessor: Possessor | None = None
+    post_modifiers: list[PostModifier] = field(default_factory=list)
+    coordinated: list[Coordination] = field(default_factory=list)
+    source_tokens: list[SourceToken] = field(default_factory=list)
+    morphology: dict[str, tuple[str, ...]] = field(default_factory=dict)
     surface: str | None = None
     pos: str = "NOUN"
-    definiteness: str = UNSPECIFIED
+    definiteness: Definiteness = UNSPECIFIED
     numeral_value: int | None = None
     literal: bool = False
-    head_indices: tuple = ()
+    head_indices: tuple[int, ...] = ()
     determiner_index: int | None = None
     demonstrative_index: int | None = None
-    predeterminers: list = field(default_factory=list)
-    adverbs: list = field(default_factory=list)
-    degree: str = "none"
+    predeterminers: list[Modifier] = field(default_factory=list)
+    adverbs: list[Modifier] = field(default_factory=list)
+    degree: Degree = "none"
 
 
 @dataclass
 class Argument:
-    relation: str
-    role: str
+    relation: ArgumentRelation
+    role: ArgumentRole
     np: NounPhrase
     source_dep: str = ""
-    source_tokens: list = field(default_factory=list)
+    source_tokens: list[SourceToken] = field(default_factory=list)
     preposition: str | None = None
     preposition_index: int | None = None
 
@@ -245,30 +270,30 @@ class Argument:
 class Clause:
     predicate: str = ""
     predicate_pos: str = ""
-    kind: str = "verbal"
-    polarity: str = "positive"
-    tense: str = UNSPECIFIED
+    kind: ClauseKind = "verbal"
+    polarity: Polarity = "positive"
+    tense: Tense = UNSPECIFIED
     perfect: bool = False
     progressive: bool = False
-    mood: str = "declarative"
+    mood: Mood = "declarative"
     transitivity: bool = False
-    voice: str = "active"
-    arguments: list = field(default_factory=list)
-    adverbs: list = field(default_factory=list)
-    modifiers: list = field(default_factory=list)
-    fragments: list = field(default_factory=list)
-    source_tokens: list = field(default_factory=list)
-    argument_order: list = field(default_factory=list)
-    links: list = field(default_factory=list)
+    voice: Voice = "active"
+    arguments: list[Argument] = field(default_factory=list)
+    adverbs: list[Modifier] = field(default_factory=list)
+    modifiers: list[Modifier] = field(default_factory=list)
+    fragments: list[list[str]] = field(default_factory=list)
+    source_tokens: list[SourceToken] = field(default_factory=list)
+    argument_order: list[tuple[ArgumentRelation, str]] = field(default_factory=list)
+    links: list[ClauseLink] = field(default_factory=list)
     predicate_index: int | None = None
-    modals: list = field(default_factory=list)
+    modals: list[Modifier] = field(default_factory=list)
 
 
 @dataclass
 class SentenceIR:
     clause: Clause
     source_text: str
-    rules: list = field(default_factory=list)
-    fragments: list = field(default_factory=list)
-    source_tokens: list = field(default_factory=list)
-    numeral_spans: list = field(default_factory=list)
+    rules: list[str] = field(default_factory=list)
+    fragments: list[list[str]] = field(default_factory=list)
+    source_tokens: list[SourceToken] = field(default_factory=list)
+    numeral_spans: list[tuple[int, int]] = field(default_factory=list)

@@ -5,11 +5,18 @@ from typing import Any
 from .ir import (
     UNSPECIFIED,
     Argument,
+    ArgumentRelation,
     Clause,
     ClauseLink,
+    ClauseLinkRelation,
     Coordination,
+    Definiteness,
+    Demonstrative,
     Modifier,
     NounPhrase,
+    NounPhraseKind,
+    Number,
+    Polarity,
     Possessor,
     PostModifier,
     SentenceIR,
@@ -152,7 +159,7 @@ class _SentenceBuilder:
                     child for child in prep.children if child.dep_ in {"pobj", "obj"}
                 )
         transitive = bool(core or passive_agents or voice == "passive")
-        relations = {
+        relations: dict[str, ArgumentRelation] = {
             "nsubj": "subject",
             "nsubjpass": "subject",
             "obj": "object",
@@ -213,7 +220,7 @@ class _SentenceBuilder:
                 )
             )
         negation_heads = {root, *(c for c in children if c.dep_ in {"aux", "auxpass"})}
-        polarity = (
+        polarity: Polarity = (
             "negative"
             if any(c.dep_ == "neg" and c.head in negation_heads for c in root.subtree)
             else "positive"
@@ -248,13 +255,14 @@ class _SentenceBuilder:
         for child in children:
             if child not in self.clause_heads or child is root:
                 continue
-            relation = {
+            link_relations: dict[str, ClauseLinkRelation] = {
                 "conj": "coordinate",
                 "advcl": "adverbial",
                 "ccomp": "complement",
                 "xcomp": "xcomp",
-            }.get(child.dep_)
-            if relation:
+            }
+            link_relation = link_relations.get(child.dep_)
+            if link_relation:
                 marker = next(
                     (item for item in child.children if item.dep_ in {"mark", "cc"}), None
                 )
@@ -266,7 +274,7 @@ class _SentenceBuilder:
                     )
                 clause.links.append(
                     ClauseLink(
-                        relation,
+                        link_relation,
                         self.source_for(marker) if marker else None,
                         self.build_clause(child),
                         [self.source_for(item) for item in child.subtree if self.source_for(item)],
@@ -282,7 +290,10 @@ class _SentenceBuilder:
         pron_types = set(token.morph.get("PronType"))
         person = GrammarAnalyzer.morph_value(token, "Person", {"1", "2", "3"})
         raw_number = GrammarAnalyzer.morph_value(token, "Number", {"sing", "plur"})
-        number = {"sing": "singular", "plur": "plural"}.get(raw_number, UNSPECIFIED)
+        number_values: dict[str, Number] = {"sing": "singular", "plur": "plural"}
+        number = number_values.get(raw_number, UNSPECIFIED)
+        np_kind: NounPhraseKind
+        demonstrative: Demonstrative
         if "Dem" in pron_types:
             np_kind = "demonstrative_pronoun" if token.pos_ == "PRON" else "noun"
             demonstrative = "proximal" if token.lemma_.lower() in {"this", "these"} else "distal"
@@ -308,7 +319,7 @@ class _SentenceBuilder:
             "wh_pronoun",
             "other_pronoun",
         }:
-            definiteness = "none"
+            definiteness: Definiteness = "none"
             determiner = None
         else:
             determiner = next(
@@ -324,7 +335,11 @@ class _SentenceBuilder:
                 if determiner
                 else UNSPECIFIED
             )
-            definiteness = {"def": "definite", "ind": "indefinite"}.get(definite, UNSPECIFIED)
+            definiteness_values: dict[str, Definiteness] = {
+                "def": "definite",
+                "ind": "indefinite",
+            }
+            definiteness = definiteness_values.get(definite, UNSPECIFIED)
             if any(
                 child.dep_ in {"poss", "nmod:poss"} or child.morph.get("Poss") == ["Yes"]
                 for child in token.children
