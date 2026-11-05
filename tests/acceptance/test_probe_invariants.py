@@ -4,9 +4,18 @@ import random
 import re
 
 import pytest
-from probes import MATRIX, PROBES, PROFILE, dialect_translators, fresh, make_translator
+from probes import (
+    MATRIX,
+    PROBES,
+    PROFILE,
+    dialect_translators,
+    fresh,
+    make_translator,
+    morphemes,
+)
 
 from conlang.core.base import Translator
+from conlang.core.results import is_info
 
 DIALECTS = list(dialect_translators())
 SEEDS = [(f"seed{n}", Translator(PROFILE, str(n))) for n in range(50)]
@@ -163,3 +172,53 @@ def test_same_lemma_and_pos_always_yield_the_same_form():
     assert len(forms) == 3
     assert translator.lexicon.root("what", "PRON") == translator.lexicon.root("what", "DET")
     assert translator.lexicon.root("why", "SCONJ") == translator.lexicon.root("why", "ADV")
+
+
+ROLE_DIALECTS = [
+    {
+        "alignment": alignment,
+        "clause_order": order,
+        "case_particles": case,
+        "pronoun_strategy": strategy,
+    }
+    for alignment, case in (
+        ("symmetrical_voice", "preposed"),
+        ("active_passive", "none"),
+        ("active_passive", "preposed"),
+        ("ergative", "preposed"),
+        ("plain", "none"),
+    )
+    for order in ("VSO", "VOS", "SVO", "SOV")
+    for strategy in ("free", "clitic_verb", "clitic_second")
+]
+
+
+def _label(fixed):
+    return "-".join(fixed.values())
+
+
+@pytest.mark.parametrize("fixed", ROLE_DIALECTS, ids=_label)
+def test_dropped_subject_clauses_keep_the_patient_a_patient(fixed):
+    translator = make_translator(fixed)
+    for text in ("Eat the dog!", "Don't eat the dog!", "Thank you."):
+        words = translator.translate(text)[0].words
+        tags = [m.gloss for m in morphemes(words)]
+        where = (fixed, text, tags)
+        if fixed["alignment"] == "symmetrical_voice":
+            assert "PF" in tags and "AF" not in tags, where
+        elif fixed["alignment"] == "active_passive":
+            assert "PASS" in tags and "AF" not in tags, where
+        elif fixed["clause_order"] in {"SVO", "VOS"}:
+            if "dog" in text:
+                verb = next(i for i, w in enumerate(words) if "EAT" in w.gloss())
+                dog = next(i for i, w in enumerate(words) if w.gloss() == "DOG")
+                assert dog > verb, where
+        elif "dog" in text:
+            assert "P2" in tags, where
+        else:
+            assert any(t.startswith("P3") for t in tags) and "P2" in tags, where
+
+
+def test_imperative_without_marking_notes_it_at_info_level():
+    result = make_translator(ROLE_DIALECTS[0]).translate("Eat the dog!")[0]
+    assert any(is_info(rule) and "imperative" in rule for rule in result.rules)

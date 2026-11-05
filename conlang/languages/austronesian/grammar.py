@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from conlang.core.ir import UNSPECIFIED
+from conlang.core.ir import UNSPECIFIED, Argument, NounPhrase
 from conlang.core.results import info
 from conlang.core.seeds import item_rng
 from conlang.core.words import Morpheme, Word
@@ -641,7 +641,7 @@ class Realizer:
                     marker.lemma.lower(), marker.pos or "SCONJ", lexicon, sources=(marker.index,)
                 )
             )
-        words.extend(self._realize_clause(link.clause, lexicon, rules))
+        words.extend(self._realize_clause(link.clause, lexicon, rules, embedded=True))
         return words
 
     def _realize_fragments(self, clause, lexicon, rules):
@@ -658,7 +658,15 @@ class Realizer:
             sequence.extend(self._np_words(argument.np, lexicon, rules))
         return sequence
 
-    def _realize_clause(self, clause, lexicon, rules):
+    def _agentless_patient(self, clause, embedded):
+        """The patient of a main-clause transitive verb whose agent was not expressed."""
+        if embedded or clause.kind != "verbal" or not clause.transitivity:
+            return None
+        if clause.voice != "active" or any(a.relation == "subject" for a in clause.arguments):
+            return None
+        return next((i for i, a in enumerate(clause.arguments) if a.relation == "object"), None)
+
+    def _realize_clause(self, clause, lexicon, rules, embedded=False):
         if clause.kind in {"nominal", "interjection"}:
             return self._realize_fragments(clause, lexicon, rules)
         verb = None
@@ -679,14 +687,33 @@ class Realizer:
                 verb.reduplicate(True, self.phonology.syllabify)
 
         alignment = self.features["alignment"]
+        arguments = list(clause.arguments)
+        promoted = None
+        patient = self._agentless_patient(clause, embedded)
+        if patient is not None:
+            if alignment in {"symmetrical_voice", "active_passive"}:
+                promoted = patient
+            elif self.features["clause_order"] not in {"SVO", "VOS"}:
+                # No voice morphology and the patient would sit in the subject slot.
+                pronoun = NounPhrase(
+                    head="agent",
+                    kind="pronoun",
+                    person="2" if clause.mood == "imperative" else "3",
+                    number=UNSPECIFIED if clause.mood == "imperative" else "plural",
+                )
+                arguments.insert(0, Argument("subject", "agent", pronoun))
+        if clause.mood == "imperative" and not embedded:
+            rules.append(info("imperative mood is not marked in this dialect"))
         if alignment == "symmetrical_voice" and verb is not None:
             pivot = next(
-                (argument for argument in clause.arguments if argument.relation == "subject"), None
+                (argument for argument in clause.arguments if argument.relation == "subject"),
+                None if promoted is None else arguments[promoted],
             )
             role = pivot.role if pivot is not None else "other"
             self._apply_affix(verb, voice_focus(role))
         elif alignment == "active_passive" and verb is not None:
-            self._apply_affix(verb, "PASS" if clause.voice == "passive" else "AF")
+            passive = clause.voice == "passive" or promoted is not None
+            self._apply_affix(verb, "PASS" if passive else "AF")
 
         category = tam_category(
             self.features["tam_system"], clause.tense, clause.perfect, clause.progressive
@@ -717,14 +744,15 @@ class Realizer:
 
         argument_words = []
         second_position_clitics = []
-        for argument in clause.arguments:
+        for position, argument in enumerate(arguments):
+            relation = "subject" if position == promoted else argument.relation
             words = self._np_words(argument.np, lexicon, rules)
-            is_core = argument.relation in {"subject", "object", "indirect_object"}
+            is_core = relation in {"subject", "object", "indirect_object"}
             is_personal = argument.np.kind == "pronoun"
             case_bearing_pivot = (
                 self.features["case_particles"] == "preposed"
                 and alignment in {"symmetrical_voice", "active_passive"}
-                and argument.relation == "subject"
+                and relation == "subject"
             )
             cliticized = (
                 is_core
@@ -759,7 +787,7 @@ class Realizer:
                         words.append(pronoun_word)
 
             if not cliticized and self.features["case_particles"] == "preposed":
-                case = self._case(alignment, argument, clause)
+                case = self._case(alignment, argument, clause, relation)
                 if case:
                     words.insert(0, self._function_word(case))
                 elif argument.preposition and argument.relation in {"oblique", "indirect_object"}:
@@ -786,7 +814,7 @@ class Realizer:
                         sources=(argument.preposition_index,),
                     ),
                 )
-            argument_words.append((argument.relation, words))
+            argument_words.append((relation, words))
 
         subjects = [
             word for relation, words in argument_words if relation == "subject" for word in words
@@ -910,15 +938,15 @@ class Realizer:
             word.add_prefix(morpheme)
 
     @staticmethod
-    def _case(alignment, argument, clause):
+    def _case(alignment, argument, clause, relation):
         if alignment == "symmetrical_voice":
-            if argument.relation == "subject":
+            if relation == "subject":
                 return "NOM"
-            if argument.relation in {"object", "indirect_object"} or argument.role == "agent":
+            if relation in {"object", "indirect_object"} or argument.role == "agent":
                 return "GEN"
             return "OBL"
         if alignment == "ergative" and clause.transitivity and argument.role == "agent":
             return "ERG"
-        if alignment == "active_passive" and argument.relation == "subject":
+        if alignment == "active_passive" and relation == "subject":
             return "NOM"
         return None

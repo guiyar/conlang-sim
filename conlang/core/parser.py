@@ -190,7 +190,11 @@ def _revision_mood_tam_kind(root, sentence, main):
         or any(token.tag_ in {"WP", "WRB", "WDT"} for token in sentence)
     )
     imperative = (
-        main and root.tag_ == "VB" and subject is None and not auxiliaries and not interrogative
+        main
+        and root.tag_ == "VB"
+        and subject is None
+        and all(aux.lemma_.lower() == "do" for aux in auxiliaries)
+        and not interrogative
     )
     mood = "interrogative" if interrogative else "imperative" if imperative else "declarative"
     expletive = any(child.dep_ == "expl" for child in children)
