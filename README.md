@@ -61,6 +61,7 @@ python -m conlang.cli --features
 python -m conlang.cli --seed 42 --check "The door was opened by Mina."
 python -m conlang.cli --seed 42 --lexicon "The dog runs."
 python -m conlang.cli --list-languages
+python -m conlang.cli --seed 42 --repl  # loads the parser once; :help lists commands
 ```
 
 `--gloss` prints text, segmentation, and gloss lines, with blank lines between sentences. `--describe` prints the phoneme inventory, syllable probabilities, grammar settings, and function forms. `--features` lists option weights, attestations, statuses, source fields, and excluded features for the selected `--language` (default: `austronesian`). `--set FEATURE=OPTION` uses feature IDs and options from that same profile catalog; repeat it to fix multiple features. Incompatible assignments report their constraint IDs. `--uniform` ignores weights while preserving constraints. `--lexicon` emits stable-order JSON for words and morphemes actually used in this invocation. `--export-dialect` includes the seed, function forms, output version, and parser/model versions. `--check` reports IR audit status and lexical homophones.

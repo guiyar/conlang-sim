@@ -88,3 +88,25 @@ def test_G6_glossed_multisentence_output_has_blank_line_between_blocks(capsys):
 def test_G_check_accepts_all_realization_field_reads(capsys):
     main(["--check", "The child saw two birds in the garden."])
     assert "IR audit: passed" in capsys.readouterr().out
+
+
+def test_repl_matches_one_shot_and_survives_errors(monkeypatch, capsys):
+    import io
+
+    from conlang.core import base
+
+    main(["--seed", "7", "The dog ran."])
+    expected = capsys.readouterr().out
+    real = base.Translator.translate
+
+    def flaky(self, text, check=False):
+        if text == "boom":
+            raise RuntimeError("bad parse")
+        return real(self, text, check=check)
+
+    monkeypatch.setattr(base.Translator, "translate", flaky)
+    monkeypatch.setattr("sys.stdin", io.StringIO("boom\nThe dog ran.\n:seed 8\n:quit\n"))
+    assert main(["--seed", "7", "--repl"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == expected
+    assert "error: bad parse" in captured.err

@@ -11,6 +11,89 @@ from conlang.core.registry import PLUGIN_FAILURES, discover_languages
 from conlang.core.render import render
 
 
+def _translate_and_print(translator, source, gloss, check):
+    results = translator.translate(source, check=check)
+    rendered = [render(result.words, gloss=gloss) for result in results]
+    print(("\n\n" if gloss else "\n").join(rendered))
+    for result in results:
+        for rule in result.rules:
+            print(f"[rule] {rule}", file=sys.stderr)
+    return results
+
+
+def _describe(profile, translator):
+    return profile.describe(
+        translator.features,
+        translator.phonology.parameters,
+        phonology=translator.phonology,
+        function_morphs=translator.function_morphs(),
+    )
+
+
+def _repl(profile, make_translator, seed, gloss, check):
+    try:
+        import readline  # noqa: F401  (enables line editing and history)
+    except ImportError:
+        pass
+    translator = make_translator(seed)
+    interactive = sys.stdin.isatty()
+    if interactive:
+        print(
+            f"conlang repl: {profile.language_id}, seed {seed}. :help for commands, Ctrl-D to exit.",
+            file=sys.stderr,
+        )
+    while True:
+        try:
+            line = input("> " if interactive else "").strip()
+        except EOFError:
+            break
+        except KeyboardInterrupt:
+            print(file=sys.stderr)
+            continue
+        if not line:
+            continue
+        if line.startswith(":"):
+            command, _, argument = line[1:].partition(" ")
+            argument = argument.strip()
+            if command in {"q", "quit", "exit"}:
+                break
+            if command == "gloss":
+                gloss = not gloss
+                print(f"gloss {'on' if gloss else 'off'}", file=sys.stderr)
+            elif command == "check":
+                check = not check
+                print(f"check {'on' if check else 'off'}", file=sys.stderr)
+            elif command == "describe":
+                print(_describe(profile, translator))
+            elif command == "features":
+                print(profile.catalog.describe_features())
+            elif command == "seed":
+                if not argument:
+                    print(f"seed {seed}", file=sys.stderr)
+                    continue
+                try:
+                    translator = make_translator(argument)
+                except IncompatibleFeatures as error:
+                    print(
+                        "incompatible features: " + ", ".join(error.constraint_ids), file=sys.stderr
+                    )
+                    continue
+                seed = argument
+                print(f"seed {seed}", file=sys.stderr)
+            elif command == "help":
+                print(
+                    ":gloss  :check  :describe  :features  :seed [N]  :help  :quit",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"unknown command :{command}; try :help", file=sys.stderr)
+            continue
+        try:
+            _translate_and_print(translator, line, gloss, check)
+        except Exception as error:
+            print(f"error: {error}", file=sys.stderr)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="conlang")
     parser.add_argument("sentence", nargs="*")
@@ -27,6 +110,7 @@ def main(argv=None):
     )
     parser.add_argument("--uniform", action="store_true")
     parser.add_argument("--list-languages", action="store_true")
+    parser.add_argument("--repl", action="store_true")
     args = parser.parse_args(argv)
     languages = discover_languages()
     if args.list_languages:
@@ -62,8 +146,12 @@ def main(argv=None):
                 f"unknown option {option_id!r} for {feature_id}; valid choices: {', '.join(choices)}"
             )
         fixed[feature_id] = option_id
+
+    def make_translator(seed):
+        return Translator(profile, seed, fixed=fixed, uniform=args.uniform)
+
     try:
-        translator = Translator(profile, args.seed, fixed=fixed, uniform=args.uniform)
+        translator = make_translator(args.seed)
     except IncompatibleFeatures as error:
         parser.error(
             "incompatible feature assignment; violated constraints: "
@@ -72,14 +160,7 @@ def main(argv=None):
     if args.features:
         print(profile.catalog.describe_features())
     if args.describe:
-        print(
-            profile.describe(
-                translator.features,
-                translator.phonology.parameters,
-                phonology=translator.phonology,
-                function_morphs=translator.function_morphs(),
-            )
-        )
+        print(_describe(profile, translator))
     if args.export_dialect:
         exported = {
             "language_id": profile.language_id,
@@ -93,14 +174,12 @@ def main(argv=None):
         print(json.dumps(exported, sort_keys=True, indent=2))
     if args.sentence:
         source = " ".join(args.sentence)
-        results = translator.translate(source, check=args.check)
-        rendered = [render(result.words, gloss=args.gloss) for result in results]
-        print(("\n\n" if args.gloss else "\n").join(rendered))
-        for result in results:
-            for rule in result.rules:
-                print(f"[rule] {rule}", file=sys.stderr)
+        results = _translate_and_print(translator, source, args.gloss, args.check)
     if args.lexicon:
         print(json.dumps(translator.lexicon.export(), sort_keys=True, indent=2))
+    if args.repl:
+        _repl(profile, make_translator, args.seed, args.gloss, args.check)
+        return 0
     if args.check:
         collisions = translator.lexicon.collisions()
         audit_rules = [rule for result in results for rule in result.rules] if args.sentence else []
