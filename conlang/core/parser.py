@@ -246,6 +246,22 @@ class _SentenceBuilder:
                     source.disposition_reason = "numeral conjunction"
 
     @staticmethod
+    def _leading_symbols(token):
+        symbols: list = []
+        index = token.i - 1
+        while index >= 0 and token.doc[index].pos_ == "SYM":
+            symbols.insert(0, token.doc[index])
+            index -= 1
+        return symbols
+
+    def _symbol_text(self, token):
+        """Digit tokens keep a leading currency symbol attached, as one literal."""
+        if not any(char.isdigit() for char in token.text):
+            return token.text
+        prefix = "".join(c.text + c.whitespace_ for c in self._leading_symbols(token))
+        return prefix + token.text
+
+    @staticmethod
     def _is_numeral_part(head, child):
         return child.dep_ == "conj" and head.pos_ == "NUM" and child.pos_ == "NUM"
 
@@ -451,7 +467,18 @@ class _SentenceBuilder:
         digit_tokens = [item for item in own_tokens if any(char.isdigit() for char in item.text)]
         numeral_value = None if digit_tokens else _revision_number_value(number_tokens)
         modifiers: list[Modifier] = []
+        for symbol in token.children:
+            following = token.doc[symbol.i + 1] if symbol.i + 1 < len(token.doc) else None
+            attached = following is not None and any(char.isdigit() for char in following.text)
+            if symbol.pos_ == "SYM" and symbol.i < token.i and not attached:
+                modifiers.append(
+                    Modifier(
+                        symbol.text, symbol.lemma_.lower(), "modifier", symbol.pos_, None, True
+                    )
+                )
         for child in sorted(token.children, key=lambda item: item.i):
+            if child.pos_ == "SYM":
+                continue
             if child in number_tokens and child is not token:
                 if (
                     child.text.lower() not in {"a", "and"}
@@ -496,7 +523,7 @@ class _SentenceBuilder:
             }
             modifiers.append(
                 Modifier(
-                    child.text,
+                    self._symbol_text(child),
                     child.lemma_.lower(),
                     "ordinal" if ordinal else "modifier",
                     child.pos_,
@@ -509,10 +536,11 @@ class _SentenceBuilder:
             if digit_token.i == token.i:
                 continue
             if not any(
-                modifier.text == digit_token.text and modifier.literal for modifier in modifiers
+                modifier.text == self._symbol_text(digit_token) and modifier.literal
+                for modifier in modifiers
             ):
                 digit_modifier = Modifier(
-                    digit_token.text,
+                    self._symbol_text(digit_token),
                     digit_token.lemma_.lower(),
                     "numeral",
                     digit_token.pos_,
@@ -601,7 +629,7 @@ class _SentenceBuilder:
                 self.source_for(item) for item in token.subtree if self.source_for(item)
             ],
             morphology=_morph(token),
-            surface=token.text,
+            surface=self._symbol_text(token),
             pos=token.pos_,
             definiteness=definiteness,
             numeral_value=numeral_value,
