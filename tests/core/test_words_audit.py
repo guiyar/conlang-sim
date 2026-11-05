@@ -12,6 +12,7 @@ from conlang.core.ir import (
     PostModifier,
     SentenceIR,
     SourceToken,
+    TokenDispositionLedger,
 )
 from conlang.core.ir_validation import IRValidationError, validate_sentence_ir
 from conlang.core.registry import discover_languages
@@ -94,6 +95,27 @@ def test_audit_accepts_new_structural_ir_fields_without_feature_declarations():
     assert audited.passes(set())
 
 
+def test_audited_ir_rejects_mutation_and_routes_disposition_to_ledger():
+    token = SourceToken("dog", morph={"Number": ("Sing",)}, index=0)
+    source = SentenceIR(Clause(), "dog", source_tokens=[token])
+    ledger = TokenDispositionLedger(source.source_tokens)
+    audited = AuditedIR(source, ledger)
+
+    with pytest.raises(AttributeError, match="audited IR is read-only"):
+        audited.value.clause.voice = "passive"
+    with pytest.raises(AttributeError):
+        audited.value.clause.arguments.append(Argument("subject", "other", NounPhrase("dog")))
+    with pytest.raises(TypeError):
+        audited.value.source_tokens[0].morph["Number"] = ("Plur",)
+
+    audited.value.source_tokens[0].disposition = "realized"
+    audited.value.source_tokens[0].disposition_reason = "emitted as a lexical word"
+    assert token.disposition is None
+    assert ledger.get(0) == ("realized", "emitted as a lexical word")
+    ledger.sync(source.source_tokens)
+    assert token.disposition == "realized"
+
+
 def test_audit_normalizes_nested_np_and_clause_link_paths():
     source = SentenceIR(
         Clause(
@@ -153,6 +175,18 @@ def test_sentence_ir_validation_checks_categories_and_token_accounting():
     )
     with pytest.raises(IRValidationError, match="duplicate source token index"):
         validate_sentence_ir(duplicate_tokens)
+
+
+def test_token_disposition_ledger_is_separate_until_synchronized():
+    token = SourceToken("dog", index=3)
+    ledger = TokenDispositionLedger([token])
+
+    ledger.record(3, "realized")
+
+    assert token.disposition is None
+    assert ledger.get(3) == ("realized", None)
+    ledger.sync([token])
+    assert token.disposition == "realized"
 
 
 def test_infix_follows_complete_onset_and_surface_is_cached():

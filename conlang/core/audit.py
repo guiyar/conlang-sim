@@ -2,8 +2,9 @@
 
 import re
 from dataclasses import dataclass, is_dataclass
+from types import MappingProxyType
 
-from .ir import STRUCTURAL_FIELDS
+from .ir import STRUCTURAL_FIELDS, SourceToken, TokenDispositionLedger
 
 
 @dataclass(frozen=True)
@@ -106,25 +107,42 @@ def _normalize_path(path):
 
 
 class _Proxy:
-    def __init__(self, value, path, reads):
+    def __init__(self, value, path, reads, disposition_ledger):
         object.__setattr__(self, "_value", value)
         object.__setattr__(self, "_path", path)
         object.__setattr__(self, "_reads", reads)
+        object.__setattr__(self, "_disposition_ledger", disposition_ledger)
 
     def __getattr__(self, name):
         value = object.__getattribute__(self, "_value")
         path = f"{object.__getattribute__(self, '_path')}.{name}" if self._path else name
         reads = object.__getattribute__(self, "_reads")
         reads.add(path)
+        ledger = object.__getattribute__(self, "_disposition_ledger")
+        if isinstance(value, SourceToken) and name in {"disposition", "disposition_reason"}:
+            state = ledger.get(value.index) if ledger is not None else None
+            if state is not None:
+                return state[0] if name == "disposition" else state[1]
         child = getattr(value, name)
-        return _wrap(child, path, reads)
+        return _wrap(child, path, reads, ledger)
 
     def __setattr__(self, name, value):
         target = object.__getattribute__(self, "_value")
-        setattr(target, name, value)
+        ledger = object.__getattribute__(self, "_disposition_ledger")
+        if isinstance(target, SourceToken) and ledger is not None:
+            if name == "disposition":
+                ledger.set_disposition(target.index, value)
+                return
+            if name == "disposition_reason":
+                ledger.set_reason(target.index, value)
+                return
+        raise AttributeError("audited IR is read-only")
 
     def __iter__(self):
-        return iter(_wrap(value, f"{self._path}[]", self._reads) for value in self._value)
+        return iter(
+            _wrap(value, f"{self._path}[]", self._reads, self._disposition_ledger)
+            for value in self._value
+        )
 
     def __len__(self):
         return len(self._value)
@@ -132,23 +150,28 @@ class _Proxy:
     def __getitem__(self, index):
         path = f"{self._path}[{index}]"
         self._reads.add(path)
-        return _wrap(self._value[index], path, self._reads)
+        return _wrap(self._value[index], path, self._reads, self._disposition_ledger)
 
 
-def _wrap(value, path, reads):
+def _wrap(value, path, reads, disposition_ledger):
     if is_dataclass(value):
-        return _Proxy(value, path, reads)
+        return _Proxy(value, path, reads, disposition_ledger)
     if isinstance(value, list):
-        return [_wrap(item, f"{path}[]", reads) for item in value]
+        return tuple(_wrap(item, f"{path}[]", reads, disposition_ledger) for item in value)
     if isinstance(value, dict):
-        return value
+        return MappingProxyType(
+            {
+                key: _wrap(item, f"{path}.{key}", reads, disposition_ledger)
+                for key, item in value.items()
+            }
+        )
     return value
 
 
 class AuditedIR:
-    def __init__(self, ir):
+    def __init__(self, ir, disposition_ledger: TokenDispositionLedger | None = None):
         self.read_paths: set[str] = set()
-        self.value = _wrap(ir, "", self.read_paths)
+        self.value = _wrap(ir, "", self.read_paths, disposition_ledger)
 
     def passes(self, allowed_fields):
         allowed = set(allowed_fields)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Final, Literal, TypeAlias
@@ -184,6 +185,41 @@ class SourceToken:
     index: int | None = None
     disposition: TokenDisposition | None = None
     disposition_reason: str | None = None
+
+
+class TokenDispositionLedger:
+    def __init__(self, tokens: Iterable[SourceToken] = ()):
+        self._states: dict[int, tuple[TokenDisposition | None, str | None]] = {}
+        for token in tokens:
+            if token.index is not None:
+                self._states[token.index] = (token.disposition, token.disposition_reason)
+
+    def get(self, index: int | None) -> tuple[TokenDisposition | None, str | None] | None:
+        return None if index is None else self._states.get(index)
+
+    def record(
+        self, index: int | None, disposition: TokenDisposition, reason: str | None = None
+    ) -> None:
+        if index is not None:
+            current = self._states.get(index)
+            if current is None or current[0] is None:
+                self._states[index] = (disposition, reason)
+
+    def set_disposition(self, index: int | None, disposition: TokenDisposition) -> None:
+        if index is not None:
+            _, reason = self._states.get(index, (None, None))
+            self._states[index] = (disposition, reason)
+
+    def set_reason(self, index: int | None, reason: str | None) -> None:
+        if index is not None:
+            disposition, _ = self._states.get(index, (None, None))
+            self._states[index] = (disposition, reason)
+
+    def sync(self, tokens: Iterable[SourceToken]) -> None:
+        for token in tokens:
+            state = self.get(token.index)
+            if state is not None:
+                token.disposition, token.disposition_reason = state
 
 
 @dataclass

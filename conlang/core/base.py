@@ -1,6 +1,7 @@
 """Translator instance owning its dialect and lexical state."""
 
 from .audit import AuditedIR
+from .ir import TokenDispositionLedger
 from .lexicon import Lexicon
 from .parser import numeral_value, parse
 from .results import ClauseResult
@@ -50,14 +51,18 @@ class Translator:
                 if sentence.clause.kind == "rootless":
                     results.append(self._fallback_result(sentence.source_text, None, sentence))
                     continue
-                audited = AuditedIR(sentence)
+                dispositions = TokenDispositionLedger(sentence.source_tokens)
+                audited = AuditedIR(sentence, dispositions)
                 allowed = {
                     source_field
                     for feature in self.profile.catalog.features
                     if feature.meaning_bearing and self.features[feature.id] is not None
                     for source_field in feature.source_fields
                 }
-                words, rules = self.realizer.realize(audited.value, self.lexicon)
+                try:
+                    words, rules = self.realizer.realize(audited.value, self.lexicon)
+                finally:
+                    dispositions.sync(sentence.source_tokens)
                 rules = list(rules)
                 if check:
                     if audited.passes(allowed):
