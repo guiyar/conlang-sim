@@ -4,11 +4,14 @@ from conlang.core.features import Constraint, Feature, FeatureCatalog, Incompati
 from conlang.languages.austronesian.catalog import CATALOG, EXCLUDED_FEATURES
 
 
-def test_catalog_is_valid_and_all_options_reachable():
+def test_catalog_is_valid():
     assert CATALOG.validate_catalog()
+
+
+@pytest.mark.stress
+def test_random_samples_never_violate_constraints():
     for seed in range(10_000):
-        assignment = CATALOG.sample(seed)
-        assert not CATALOG._violations(assignment)
+        assert not CATALOG._violations(CATALOG.sample(seed))
 
 
 def test_constraints_reject_impossible_fixed_values_with_ids():
@@ -154,6 +157,7 @@ def test_catalog_rejects_an_excluded_feature_id():
         FeatureCatalog((excluded,), excluded_features=(("excluded_feature", "not derivable"),))
 
 
+@pytest.mark.stress
 def test_uniform_sampling_co_realizes_every_logically_allowed_option_pair():
     assignments = [CATALOG.sample(seed, uniform=True) for seed in range(10_000)]
     features = CATALOG.features

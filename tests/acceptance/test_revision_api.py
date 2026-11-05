@@ -207,14 +207,21 @@ def test_A5_root_length_distributions_accept_pos_shape_classes():
     assert sum(map(len, function)) / len(function) <= 2.6
 
 
-def test_A6_default_sampling_and_rendered_word_lengths_meet_thresholds():
+def test_A6_default_sampling_and_rendered_word_lengths_meet_thresholds(sweep):
     profile = discover_languages()["austronesian"]
-    assignments = [profile.catalog.sample(seed) for seed in range(1000)]
-    assert sum(item["syllable_structure"] == "open" for item in assignments) / 1000 >= 0.65
+    assignments = [profile.catalog.sample(seed) for seed in range(sweep(1000))]
     assert (
-        sum(item["syllable_structure"] == "closed_clusters" for item in assignments) / 1000 <= 0.08
+        sum(item["syllable_structure"] == "open" for item in assignments) / len(assignments) >= 0.65
     )
-    assert sum(item["vowel_length"] == "contrastive" for item in assignments) / 1000 <= 0.35
+    assert (
+        sum(item["syllable_structure"] == "closed_clusters" for item in assignments)
+        / len(assignments)
+        <= 0.08
+    )
+    assert (
+        sum(item["vowel_length"] == "contrastive" for item in assignments) / len(assignments)
+        <= 0.35
+    )
     sentences = (
         "I will see the dog in the house.",
         "The children quickly found many birds.",
@@ -226,7 +233,7 @@ def test_A6_default_sampling_and_rendered_word_lengths_meet_thresholds():
         "The old tree stood near the river.",
     )
     passing = []
-    for seed in range(150):
+    for seed in range(sweep(150)):
         translator = Translator(profile, seed)
         for sentence in sentences:
             translator.translate(sentence)

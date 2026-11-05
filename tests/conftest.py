@@ -28,3 +28,23 @@ def pytest_report_header(config):
 pytestmark = pytest.mark.skipif(
     PARSER_PROBLEM is not None, reason=PARSER_PROBLEM or "parser model available"
 )
+
+
+def pytest_addoption(parser):
+    parser.addoption("--full-sweeps", action="store_true", help="run full-size seed sweeps")
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--full-sweeps"):
+        return
+    skip = pytest.mark.skip(reason="stress test; pass --full-sweeps (make test-stress)")
+    for item in items:
+        if "stress" in item.keywords:
+            item.add_marker(skip)
+
+
+@pytest.fixture
+def sweep(request):
+    """Scale a seed count down to a tenth (min 10) unless --full-sweeps is given."""
+    full = request.config.getoption("--full-sweeps")
+    return lambda count: count if full else min(count, max(10, count // 10))

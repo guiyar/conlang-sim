@@ -25,16 +25,17 @@ def test_lexical_request_order_does_not_change_roots():
     assert first.lexicon.root("dog", "VERB") != dog_first
 
 
-def test_feature_assignments_and_output_vary_across_seed_sweep():
+def test_feature_assignments_and_output_vary_across_seed_sweep(sweep):
+    count = sweep(200)
     profile = discover_languages()["austronesian"]
     assignments = [profile.catalog.sample(seed) for seed in range(200)]
     for feature in profile.catalog.features:
         assert len({assignment[feature.id] for assignment in assignments}) > 1, feature.id
     outputs = {
         render(Translator(profile, seed).translate("We see the birds.")[0].words)
-        for seed in range(200)
+        for seed in range(count)
     }
-    assert len(outputs) >= 50
+    assert len(outputs) >= count // 4
 
 
 def test_lexicon_separates_language_ids():

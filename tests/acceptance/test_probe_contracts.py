@@ -39,13 +39,14 @@ def output_lemmas(translator):
     return {entry["lemma"] for entry in translator.lexicon.export() if entry["lemma"]}
 
 
-def test_probe_A2_short_roots_and_functions_on_reference_battery():
+def test_probe_A2_short_roots_and_functions_on_reference_battery(sweep):
+    count = sweep(150)
     battery = [
         "The child saw a bird near the river.",
         "The old man carried water to the house.",
     ]
     typical = 0
-    for seed in range(150):
+    for seed in range(count):
         translator = Translator(PROFILE, str(seed))
         for sentence in battery:
             translator.translate(sentence)
@@ -67,11 +68,11 @@ def test_probe_A2_short_roots_and_functions_on_reference_battery():
             and sum(functions) / len(functions) <= 2.6
         ):
             typical += 1
-    assert typical / 150 >= 0.85
+    assert typical / count >= 0.85
 
 
-def test_probe_B1_function_morph_forms_are_unique():
-    for seed in range(300):
+def test_probe_B1_function_morph_forms_are_unique(sweep):
+    for seed in range(sweep(300)):
         forms = make_translator(seed).function_morphs().values()
         assert len(forms) == len(set(forms)), seed
 

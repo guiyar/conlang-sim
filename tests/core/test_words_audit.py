@@ -24,7 +24,7 @@ from conlang.core.results import info, is_info
 from conlang.core.words import Morpheme, SurfaceEdit, SurfaceInsertion, SurfaceResult, Word
 
 
-def test_austronesian_realization_audit_and_seed_stability():
+def test_austronesian_realization_audit_and_seed_stability(sweep):
     profile = discover_languages()["austronesian"]
     source = SentenceIR(
         Clause(
@@ -39,7 +39,7 @@ def test_austronesian_realization_audit_and_seed_stability():
         ),
         "The child saw dogs.",
     )
-    for seed in range(200):
+    for seed in range(sweep(200)):
         translator = Translator(profile, seed)
         audited = AuditedIR(source)
         words, _ = translator.realizer.realize(audited.value, translator.lexicon)

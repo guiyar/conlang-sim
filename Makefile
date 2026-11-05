@@ -1,4 +1,4 @@
-.PHONY: format format-check lint typecheck deadcode test test-fast coverage check
+.PHONY: format format-check lint typecheck deadcode test test-fast test-stress coverage check
 
 format:
 	ruff format conlang tests
@@ -20,6 +20,9 @@ test:
 
 test-fast:
 	python -m pytest -n auto
+
+test-stress:
+	python -m pytest --full-sweeps
 
 coverage:
 	python -m pytest --cov=conlang --cov-report=term-missing
