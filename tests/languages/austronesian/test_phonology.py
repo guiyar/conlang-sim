@@ -1,5 +1,6 @@
 from conlang.core.registry import discover_languages
 from conlang.core.seeds import item_rng
+from conlang.core.words import SurfaceInsertion, SurfaceResult
 
 
 def test_five_thousand_roots_and_words_are_phonotactically_valid():
@@ -39,3 +40,16 @@ def test_tam_tables_are_total_and_unspecified_is_deterministic():
                     "perfective",
                     "imperfective",
                 }
+
+
+def test_surface_repair_reports_explicit_consonant_cluster_insertions():
+    profile = discover_languages()["austronesian"]
+    features = profile.catalog.sample(0, {"syllable_structure": "closed"})
+    phonology = profile.phonology_class(features, 0, profile.language_id, profile.output_version)
+    notes = []
+
+    result = phonology.validate_surface(["k", "t", "a"], notes, "a")
+
+    assert isinstance(result, SurfaceResult)
+    assert result.segments == ("k", "a", "t", "a")
+    assert result.insertions == (SurfaceInsertion(1, "a", "consonant cluster"),)

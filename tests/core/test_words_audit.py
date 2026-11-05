@@ -6,7 +6,7 @@ from conlang.core.audit import AuditedIR
 from conlang.core.base import Translator
 from conlang.core.ir import Argument, Clause, NounPhrase, SentenceIR
 from conlang.core.registry import discover_languages
-from conlang.core.words import Morpheme, Word
+from conlang.core.words import Morpheme, SurfaceEdit, SurfaceInsertion, SurfaceResult, Word
 
 
 def test_austronesian_realization_audit_and_seed_stability():
@@ -145,6 +145,17 @@ def test_realized_word_is_immutable_and_rejects_construction_operations():
         realized.morphemes[0].segments = ("x",)
     with pytest.raises(RuntimeError, match="cannot modify"):
         word.add_suffix(Morpheme(("s",), "PL", "suffix"))
+
+
+def test_surface_insertions_are_anchored_to_their_host_morpheme():
+    word = Word([Morpheme(("k", "t"), "ROOT", "root", sources=(5,))])
+    repair = SurfaceResult(("k", "a", "t"), (SurfaceInsertion(1, "a", "consonant cluster"),))
+
+    realized = word.realize(lambda segments, notes, vowel: repair)
+
+    assert realized.surface_edits == (SurfaceEdit(0, 1, "a", "consonant cluster"),)
+    assert realized.morphemes[0].segments == ("k", "a", "t")
+    assert realized.morphemes[0].sources == (5,)
 
 
 def test_invalid_morpheme_kind_rejected():

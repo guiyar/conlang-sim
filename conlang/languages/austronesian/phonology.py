@@ -1,6 +1,7 @@
 """Seeded phoneme inventories and bounded syllable generation."""
 
 from conlang.core.seeds import item_rng
+from conlang.core.words import SurfaceInsertion, SurfaceResult
 
 from .catalog import OUTPUT_VERSION
 
@@ -293,30 +294,47 @@ class Phonology:
     def validate_surface(self, segments, notes, epenthetic_vowel):
         result = list(segments)
         if self.segments("".join(result)) == result and self.valid(result):
-            return result
+            return SurfaceResult(tuple(result))
+        insertions = []
         repaired: list[str] = []
         for segment in result:
             if repaired and repaired[-1] in self.consonants and segment in self.consonants:
+                insertions.append(
+                    SurfaceInsertion(len(repaired), epenthetic_vowel, "consonant cluster")
+                )
                 repaired.append(epenthetic_vowel)
             repaired.append(segment)
         if repaired and repaired[-1] in self.consonants:
             if self.structure == "open" or repaired[-1] not in self.codas:
+                insertions.append(
+                    SurfaceInsertion(len(repaired), epenthetic_vowel, "forbidden final consonant")
+                )
                 repaired.append(epenthetic_vowel)
         result = repaired
         if not self.valid(result):
             repaired = []
             for segment in result:
                 if repaired and repaired[-1] in self.consonants and segment in self.consonants:
+                    insertions.append(
+                        SurfaceInsertion(
+                            len(repaired), epenthetic_vowel, "fallback consonant cluster"
+                        )
+                    )
                     repaired.append(epenthetic_vowel)
                 repaired.append(segment)
                 if segment in self.consonants and (
                     not repaired or repaired[-1] != epenthetic_vowel
                 ):
+                    insertions.append(
+                        SurfaceInsertion(
+                            len(repaired), epenthetic_vowel, "fallback consonant repair"
+                        )
+                    )
                     repaired.append(epenthetic_vowel)
             result = repaired
         if result != list(segments):
             notes.append("epenthetic vowel inserted to satisfy spelling and syllable structure")
-        return result
+        return SurfaceResult(tuple(result), tuple(insertions))
 
     def segments(self, text):
         inventory = sorted(set(self.vowels + self.consonants), key=lambda item: (-len(item), item))

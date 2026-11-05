@@ -1,7 +1,6 @@
 """Segment-based morphology and a single final phonotactic pass."""
 
 from dataclasses import dataclass, field
-from difflib import SequenceMatcher
 
 VALID_KINDS = frozenset(
     {"root", "prefix", "suffix", "infix", "clitic", "particle", "reduplicant", "epenthetic"}
@@ -24,6 +23,27 @@ class Morpheme:
 
 
 @dataclass(frozen=True)
+class SurfaceInsertion:
+    position: int
+    segment: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class SurfaceResult:
+    segments: tuple[str, ...]
+    insertions: tuple[SurfaceInsertion, ...] = ()
+
+
+@dataclass(frozen=True)
+class SurfaceEdit:
+    anchor_morpheme: int
+    anchor_segment: int
+    inserted_segment: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class RealizedMorpheme:
     segments: tuple[str, ...]
     gloss: str
@@ -39,6 +59,7 @@ class RealizedWord:
     segmented_form: str
     gloss_form: str
     morphemes: tuple[RealizedMorpheme, ...]
+    surface_edits: tuple[SurfaceEdit, ...]
     sources: tuple[int, ...]
     notes: tuple[str, ...]
     literal: bool
@@ -158,25 +179,49 @@ class Word:
             return self._realized
         original = list(self.segments)
         segments = list(original)
+        insertions: tuple[SurfaceInsertion, ...] = ()
         if validator is not None:
-            segments = validator(segments, self.notes, epenthetic_vowel)
-        matcher = SequenceMatcher(a=original, b=segments, autojunk=False)
-        insertions: list[tuple[int, str]] = []
-        for operation, start, _, target_start, target_end in matcher.get_opcodes():
-            if operation == "insert":
-                insertions.extend((start, segment) for segment in segments[target_start:target_end])
-        for position, segment in reversed(insertions):
+            result = validator(segments, self.notes, epenthetic_vowel)
+            if isinstance(result, SurfaceResult):
+                segments = list(result.segments)
+                insertions = result.insertions
+            else:
+                segments = list(result)
+                if segments != original:
+                    raise TypeError(
+                        "surface validators that insert segments must return SurfaceResult"
+                    )
+        expected_segments = list(original)
+        for insertion in insertions:
+            if not 0 <= insertion.position <= len(expected_segments):
+                raise ValueError(
+                    "surface insertion position is outside the current segment sequence"
+                )
+            expected_segments.insert(insertion.position, insertion.segment)
+        if expected_segments != segments:
+            raise ValueError("surface insertion records do not match the returned segments")
+
+        applied_edits: list[SurfaceEdit] = []
+        for insertion in insertions:
             layout = self._segment_layout()
-            if position < len(layout):
-                morpheme_index, local_index = layout[position]
+            if insertion.position < len(layout):
+                morpheme_index, local_index = layout[insertion.position]
             elif layout:
                 morpheme_index, local_index = layout[-1]
                 local_index += 1
             else:
-                continue
+                raise ValueError("cannot anchor a surface insertion to an empty word")
             target = self.morphemes[morpheme_index]
             target.segments = (
-                target.segments[:local_index] + (segment,) + target.segments[local_index:]
+                target.segments[:local_index] + (insertion.segment,) + target.segments[local_index:]
+            )
+            applied_edits.append(
+                SurfaceEdit(
+                    morpheme_index,
+                    local_index,
+                    insertion.segment,
+                    insertion.reason,
+                )
             )
             if target.kind == "root" and morpheme_index + 1 < len(self.morphemes):
                 following = self.morphemes[morpheme_index + 1]
@@ -198,6 +243,7 @@ class Word:
                 )
                 for morpheme in self.morphemes
             ),
+            tuple(applied_edits),
             self.sources,
             tuple(self.notes),
             self.literal,
