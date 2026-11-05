@@ -1,3 +1,7 @@
+from dataclasses import FrozenInstanceError
+
+import pytest
+
 from conlang.core.audit import AuditedIR
 from conlang.core.base import Translator
 from conlang.core.ir import Argument, Clause, NounPhrase, SentenceIR
@@ -110,6 +114,37 @@ def test_invalid_infix_fallback_preserves_morpheme_sources():
     assert word.morphemes[-1].kind == "suffix"
     assert word.morphemes[-1].sources == (7,)
     assert word.sources == (3, 7)
+
+
+def test_surface_validation_failure_does_not_finalize_word():
+    word = Word([Morpheme(("k", "a", "t"), "ROOT", "root")])
+
+    def reject(segments, notes, vowel):
+        raise ValueError("invalid realization")
+
+    with pytest.raises(ValueError, match="invalid realization"):
+        word.surface(reject)
+
+    assert word.realized is None
+    assert word.surface() == "kat"
+    assert word.realized is not None
+
+
+def test_realized_word_is_immutable_and_rejects_construction_operations():
+    word = Word([Morpheme(("k", "a", "t"), "ROOT", "root", sources=(4,))])
+
+    realized = word.realize()
+
+    assert realized is word.realized
+    assert realized.surface() == "kat"
+    assert realized.segments == ("k", "a", "t")
+    assert realized.sources == (4,)
+    with pytest.raises(FrozenInstanceError):
+        realized.surface_form = "changed"
+    with pytest.raises(FrozenInstanceError):
+        realized.morphemes[0].segments = ("x",)
+    with pytest.raises(RuntimeError, match="cannot modify"):
+        word.add_suffix(Morpheme(("s",), "PL", "suffix"))
 
 
 def test_invalid_morpheme_kind_rejected():

@@ -76,13 +76,16 @@ class Translator:
     def _surface_words(self, words):
         for word in words:
             if word.literal:
-                word.surface()
+                word.realize()
             else:
-                word.surface(self.phonology.validate_surface, self.phonology.epenthetic_vowel)
+                word.realize(self.phonology.validate_surface, self.phonology.epenthetic_vowel)
 
     def _record_output(self, words):
         for word in words:
-            for morpheme in word.morphemes:
+            realized = word.realized
+            if realized is None:
+                raise RuntimeError("output word was not realized")
+            for morpheme in realized.morphemes:
                 form = "".join(morpheme.segments)
                 if morpheme.gloss in self.realizer.forms:
                     self.lexicon.record(
@@ -108,8 +111,8 @@ class Translator:
                     if matching is not None:
                         lemma, pos, category = matching
                         self.lexicon.record(form, morpheme.gloss, lemma, pos, category)
-            if word.literal:
-                self.lexicon.literal(word.surface(), word.gloss())
+            if realized.literal:
+                self.lexicon.literal(realized.surface(), realized.gloss())
 
     def _fallback_result(self, text, error=None, sentence=None):
         from .words import Morpheme, Word

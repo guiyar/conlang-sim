@@ -23,20 +23,57 @@ class Morpheme:
             raise ValueError(f"invalid morpheme kind: {self.kind}")
 
 
+@dataclass(frozen=True)
+class RealizedMorpheme:
+    segments: tuple[str, ...]
+    gloss: str
+    kind: str
+    position: int | None
+    sources: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class RealizedWord:
+    surface_form: str
+    segments: tuple[str, ...]
+    segmented_form: str
+    gloss_form: str
+    morphemes: tuple[RealizedMorpheme, ...]
+    sources: tuple[int, ...]
+    notes: tuple[str, ...]
+    literal: bool
+
+    def surface(self):
+        return self.surface_form
+
+    def segmented(self):
+        return self.segmented_form
+
+    def gloss(self):
+        return self.gloss_form
+
+
 @dataclass
 class Word:
     morphemes: list[Morpheme]
     notes: list[str] = field(default_factory=list)
-    _surfaced: bool = False
-    _surface_form: str | None = None
     literal: bool = False
+    _realized: RealizedWord | None = field(default=None, init=False, repr=False)
+
+    @property
+    def realized(self):
+        return self._realized
 
     @property
     def sources(self):
+        if self._realized is not None:
+            return self._realized.sources
         return tuple(sorted({i for m in self.morphemes for i in m.sources}))
 
     @property
     def segments(self):
+        if self._realized is not None:
+            return self._realized.segments
         return tuple(
             self.morphemes[morpheme].segments[segment]
             for morpheme, segment in self._segment_layout()
@@ -76,13 +113,20 @@ class Word:
                 )
         return layout
 
+    def _ensure_constructing(self):
+        if self._realized is not None:
+            raise RuntimeError("cannot modify a realized word")
+
     def add_prefix(self, morpheme):
+        self._ensure_constructing()
         self.morphemes.insert(0, morpheme)
 
     def add_suffix(self, morpheme):
+        self._ensure_constructing()
         self.morphemes.append(morpheme)
 
     def add_infix(self, morpheme, onset_length=1):
+        self._ensure_constructing()
         roots = [i for i, m in enumerate(self.morphemes) if m.kind == "root"]
         if not roots or not 0 <= onset_length <= len(self.morphemes[roots[0]].segments):
             self.notes.append(f"infix {morpheme.gloss} fell back to suffixation")
@@ -94,6 +138,7 @@ class Word:
         self.morphemes.insert(roots[0] + 1, morpheme)
 
     def reduplicate(self, partial=False, syllabify=None):
+        self._ensure_constructing()
         root_index = next((i for i, m in enumerate(self.morphemes) if m.kind == "root"), None)
         if root_index is None:
             self.notes.append("reduplication fell back: no root")
@@ -105,12 +150,12 @@ class Word:
         )
 
     def cliticize(self, morpheme):
+        self._ensure_constructing()
         self.morphemes.append(morpheme)
 
-    def surface(self, validator=None, epenthetic_vowel="a"):
-        if self._surfaced:
-            return self._surface_form
-        self._surfaced = True
+    def realize(self, validator=None, epenthetic_vowel="a"):
+        if self._realized is not None:
+            return self._realized
         original = list(self.segments)
         segments = list(original)
         if validator is not None:
@@ -137,10 +182,37 @@ class Word:
                 following = self.morphemes[morpheme_index + 1]
                 if following.kind == "infix" and local_index <= (following.position or 0):
                     following.position = (following.position or 0) + 1
-        self._surface_form = "".join(self.segments)
-        return self._surface_form
+        surface_form = "".join(self.segments)
+        self._realized = RealizedWord(
+            surface_form,
+            tuple(self.segments),
+            self._segmented_form(),
+            self._gloss_form(),
+            tuple(
+                RealizedMorpheme(
+                    morpheme.segments,
+                    morpheme.gloss,
+                    morpheme.kind,
+                    morpheme.position,
+                    morpheme.sources,
+                )
+                for morpheme in self.morphemes
+            ),
+            self.sources,
+            tuple(self.notes),
+            self.literal,
+        )
+        return self._realized
+
+    def surface(self, validator=None, epenthetic_vowel="a"):
+        return self.realize(validator, epenthetic_vowel).surface()
 
     def segmented(self):
+        if self._realized is not None:
+            return self._realized.segmented()
+        return self._segmented_form()
+
+    def _segmented_form(self):
         parts = []
         for group in self._morphology_groups():
             if len(group) == 2:
@@ -160,6 +232,11 @@ class Word:
         return "-".join(parts)
 
     def gloss(self):
+        if self._realized is not None:
+            return self._realized.gloss()
+        return self._gloss_form()
+
+    def _gloss_form(self):
         parts = []
         for group in self._morphology_groups():
             if len(group) == 2:
