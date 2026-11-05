@@ -28,6 +28,7 @@ STRUCTURAL_FIELDS = frozenset(
         "np.post_modifiers",
         "np.coordinated",
         "modifier.pos",
+        "modifier.lemma",
         "modifier.value",
         "modifier.literal",
         "modifier.sub_modifiers",

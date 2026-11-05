@@ -4,6 +4,20 @@ from dataclasses import is_dataclass
 
 from .ir import STRUCTURAL_FIELDS
 
+_LINK_PREFIXES = ("clause.links[]", "np.post_modifiers[].link")
+
+
+def _rebase_clause(path):
+    """Rewrite paths inside a linked clause as if they were read from a top-level clause."""
+    for prefix in _LINK_PREFIXES:
+        if f"{prefix}.clause." in path:
+            return "clause." + path.rsplit(f"{prefix}.clause.", 1)[1]
+        if f"{prefix}.marker." in path:
+            return "source_token." + path.rsplit(f"{prefix}.marker.", 1)[1]
+        if path.endswith(f"{prefix}.marker"):
+            return "clause_link.marker"
+    return path
+
 
 class _Proxy:
     def __init__(self, value, path, reads):
@@ -61,9 +75,7 @@ class AuditedIR:
                 continue
             if path in STRUCTURAL_FIELDS:
                 continue
-            normalized = path.replace("clause.links[].clause.", "clause.")
-            normalized = normalized.replace("clause.links[].marker.", "source_token.")
-            normalized = normalized.replace("clause.links[].marker", "clause_link.marker")
+            normalized = _rebase_clause(path)
             normalized = normalized.replace(
                 "clause.arguments[].np.source_tokens[].", "source_token."
             )
@@ -73,9 +85,8 @@ class AuditedIR:
             normalized = normalized.replace("np.coordinated[].np.", "np.")
             normalized = normalized.replace("np.coordinated[].conj.", "source_token.")
             normalized = normalized.replace("np.coordinated[].", "coordination.")
-            normalized = normalized.replace("np.post_modifiers[].link.clause.", "clause.")
-            normalized = normalized.replace("np.post_modifiers[].link.marker.", "source_token.")
             normalized = normalized.replace("np.post_modifiers[].", "post_modifier.")
+            normalized = normalized.replace("clause.adverbs[].", "modifier.")
             normalized = normalized.replace("clause.arguments[].", "argument.")
             normalized = normalized.replace("clause.source_tokens[].", "source_token.")
             normalized = normalized.replace("np.source_tokens[].", "source_token.")

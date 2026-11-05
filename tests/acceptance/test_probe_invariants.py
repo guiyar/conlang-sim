@@ -45,3 +45,10 @@ def test_currency_symbol_stays_attached_to_the_number():
     translator = make_translator(MATRIX[0])
     surfaces = [w.surface() for w in translator.translate("It costs $5.")[0].words]
     assert "$5" in surfaces
+
+
+@pytest.mark.parametrize("name,translator", ALL, ids=IDS)
+def test_check_passes_for_every_probe(name, translator):
+    for text in PROBES:
+        for result in results_for(translator, text, check=True):
+            assert "IR audit passed." in result.rules, (name, text, result.rules)
