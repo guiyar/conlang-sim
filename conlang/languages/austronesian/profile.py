@@ -1,5 +1,7 @@
 """Registered V1 Austronesian-inspired language profile."""
 
+from types import MappingProxyType
+
 from conlang.core.registry import register_language
 
 from .catalog import CATALOG, OUTPUT_VERSION
@@ -67,7 +69,6 @@ CLOSED_CLASS: tuple[tuple[str, str], ...] = (
     ("because", "SCONJ"),
     ("if", "SCONJ"),
     ("that", "SCONJ"),
-    ("when", "SCONJ"),
     ("while", "SCONJ"),
     ("although", "SCONJ"),
     ("though", "SCONJ"),
@@ -93,9 +94,6 @@ CLOSED_CLASS: tuple[tuple[str, str], ...] = (
     ("must", "AUX"),
     ("who", "PRON"),
     ("whom", "PRON"),
-    ("whose", "PRON"),
-    ("which", "PRON"),
-    ("what", "PRON"),
     ("someone", "PRON"),
     ("something", "PRON"),
     ("anyone", "PRON"),
@@ -173,6 +171,37 @@ CLOSED_CLASS = _EARLY_CLOSED_CLASS + tuple(
 )
 
 
+# One function word whose tagger POS varies: both keys share one form and gloss.
+LEMMA_ALIASES = MappingProxyType(
+    {
+        ("what", "PRON"): ("what", "DET"),
+        ("which", "PRON"): ("which", "DET"),
+        ("whose", "PRON"): ("whose", "DET"),
+        **{(lemma, "SCONJ"): (lemma, "ADV") for lemma in ("when", "where", "why", "how")},
+    }
+)
+
+# Distinct function words that share an English spelling get distinct glosses.
+GLOSSES = MappingProxyType(
+    {
+        ("that", "DET"): "THAT.DEM",
+        ("that", "SCONJ"): "THAT.COMP",
+        ("that", "PRON"): "THAT.REL",
+        ("to", "PART"): "TO.INF",
+        ("no", "INTJ"): "NO.INTJ",
+    }
+)
+
+
+def canonical_key(lemma, pos):
+    return LEMMA_ALIASES.get((lemma, pos), (lemma, pos))
+
+
+def gloss_for(lemma, pos):
+    lemma, pos = canonical_key(lemma, pos)
+    return GLOSSES.get((lemma, pos), lemma.upper())
+
+
 def word_shape(pos):
     if pos == "NUM":
         return "numeral"
@@ -193,6 +222,8 @@ class Austronesian:
     CLOSED_CLASS = CLOSED_CLASS
     closed_class = CLOSED_CLASS
     word_shape = staticmethod(word_shape)
+    gloss_for = staticmethod(gloss_for)
+    canonical_key = staticmethod(canonical_key)
 
     @staticmethod
     def phonology(features, seed, language_id, output_version):

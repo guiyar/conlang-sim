@@ -29,6 +29,8 @@ class Translator:
             self.phonology,
             shape_for_pos=getattr(profile, "word_shape", None),
             closed_forms=self.realizer.closed_forms,
+            gloss_for=getattr(profile, "gloss_for", None),
+            canonical_key=getattr(profile, "canonical_key", None),
         )
         self.lexicon.register_function_forms(self.realizer.function_forms())
 
@@ -99,7 +101,7 @@ class Translator:
                                     for key, f in self.lexicon.closed_forms.items()
                                 ),
                             ]
-                            if lemma.upper() == morpheme.gloss and known == form
+                            if self.lexicon.gloss(lemma, pos) == morpheme.gloss and known == form
                         ),
                         None,
                     )
@@ -192,7 +194,7 @@ class Translator:
                     [
                         Morpheme(
                             tuple(self.phonology.segments(form)),
-                            lemma.upper(),
+                            self.lexicon.gloss(lemma, pos),
                             "root",
                             sources=sources,
                         )

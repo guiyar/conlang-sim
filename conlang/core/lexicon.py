@@ -5,7 +5,15 @@ from .seeds import item_rng
 
 class Lexicon:
     def __init__(
-        self, seed, language_id, output_version, phonology, shape_for_pos=None, closed_forms=None
+        self,
+        seed,
+        language_id,
+        output_version,
+        phonology,
+        shape_for_pos=None,
+        closed_forms=None,
+        gloss_for=None,
+        canonical_key=None,
     ):
         self.seed = seed
         self.language_id = language_id
@@ -16,6 +24,8 @@ class Lexicon:
         self.function_forms = set()
         self.closed_forms = dict(closed_forms or {})
         self._export_entries = {}
+        self._gloss_for = gloss_for or (lambda lemma, pos: lemma.upper())
+        self._canonical_key = canonical_key or (lambda lemma, pos: (lemma, pos))
 
     def register_function_forms(self, forms):
         self.function_forms.update(forms.values() if isinstance(forms, dict) else forms)
@@ -31,11 +41,15 @@ class Lexicon:
         self.record(form, form if gloss is None else gloss, category="literal")
         return form
 
+    def gloss(self, lemma, pos):
+        return self._gloss_for(lemma, pos)
+
     def root(self, lemma, pos):
+        lemma, pos = self._canonical_key(lemma, pos)
         key = (lemma, pos)
         if key in self.closed_forms:
             form = self.closed_forms[key]
-            self.record(form, lemma.upper(), lemma, pos, "function")
+            self.record(form, self.gloss(lemma, pos), lemma, pos, "function")
             return form
         shape = self.shape_for_pos(pos)
         function_word = shape == "function"
@@ -47,7 +61,9 @@ class Lexicon:
             self.closed_forms[key] = form
         else:
             self.entries[key] = form
-        self.record(form, lemma.upper(), lemma, pos, "function" if function_word else "lexical")
+        self.record(
+            form, self.gloss(lemma, pos), lemma, pos, "function" if function_word else "lexical"
+        )
         return form
 
     def _mint(self, lemma, pos, stream, shape):

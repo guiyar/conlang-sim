@@ -384,7 +384,9 @@ class Realizer:
 
     def _root(self, lemma, pos, lexicon, sources=()):
         form = lexicon.root(lemma, pos)
-        word = Word([Morpheme(tuple(self.phonology.segments(form)), lemma.upper(), "root")])
+        word = Word(
+            [Morpheme(tuple(self.phonology.segments(form)), lexicon.gloss(lemma, pos), "root")]
+        )
         return self._tag(word, sources)
 
     @staticmethod
@@ -395,7 +397,7 @@ class Realizer:
 
     def _lexical_word(self, lemma, pos, lexicon, gloss=None, sources=()):
         form = self.phonology.segments(lexicon.root(lemma, pos))
-        word = Word([Morpheme(tuple(form), gloss or lemma.upper(), "root")])
+        word = Word([Morpheme(tuple(form), gloss or lexicon.gloss(lemma, pos), "root")])
         return self._tag(word, sources)
 
     def _literal_word(self, text, sources=()):
@@ -457,10 +459,10 @@ class Realizer:
                 )
             ]
         else:
-            head_pos = np.pos or (
-                "PRON"
-                if kind in {"wh_pronoun", "other_pronoun", "demonstrative_pronoun"}
-                else "NOUN"
+            head_pos = (
+                "DET"
+                if kind == "demonstrative_pronoun"
+                else np.pos or ("PRON" if kind in {"wh_pronoun", "other_pronoun"} else "NOUN")
             )
             head_words = [self._lexical_word(np.head, head_pos, lexicon, sources=np.head_indices)]
 
