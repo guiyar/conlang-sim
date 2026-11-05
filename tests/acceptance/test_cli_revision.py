@@ -58,7 +58,7 @@ def test_G3_export_contains_seed_and_function_morphs(capsys):
     main(["--seed", "12", "--export-dialect"])
     exported = json.loads(capsys.readouterr().out)
     assert exported["seed"] == "12"
-    assert exported["output_version"] == 3
+    assert exported["output_version"] == 4
     assert isinstance(exported["function_morphs"], dict)
     assert "parser_versions" in exported
 

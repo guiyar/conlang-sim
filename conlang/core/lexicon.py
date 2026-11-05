@@ -38,46 +38,32 @@ class Lexicon:
             self.record(form, lemma.upper(), lemma, pos, "function")
             return form
         shape = self.shape_for_pos(pos)
-        if shape == "function":
-            for attempt in range(64):
-                key_part = f"{lemma}/{pos}" if attempt == 0 else f"{lemma}/{pos}:retry:{attempt}"
-                rng = item_rng(self.seed, self.language_id, self.output_version, "fn", key_part)
-                form = self.phonology.make_root(rng, lemma, pos, shape="function")
-                if form not in self.function_forms and form not in self.entries.values():
-                    self.closed_forms[key] = form
-                    self.function_forms.add(form)
-                    self.record(form, lemma.upper(), lemma, pos, "function")
-                    return form
-            fallback = item_rng(
-                self.seed, self.language_id, self.output_version, "fn", f"{lemma}/{pos}:fallback"
-            )
-            form = self.phonology.make_root(
-                fallback, lemma, pos, shape="function"
-            ) + self.phonology.make_syllable(fallback, shape="function")
-            self.closed_forms[key] = form
-            self.function_forms.add(form)
-            self.record(form, lemma.upper(), lemma, pos, "function")
-            return form
-        if key in self.entries:
+        function_word = shape == "function"
+        if not function_word and key in self.entries:
             return self.entries[key]
-        forbidden = self.function_forms | set(self.entries.values())
+        stream = "fn" if function_word else "lex"
+        form = self._mint(lemma, pos, stream, shape)
+        if function_word:
+            self.closed_forms[key] = form
+        else:
+            self.entries[key] = form
+        self.record(form, lemma.upper(), lemma, pos, "function" if function_word else "lexical")
+        return form
+
+    def _mint(self, lemma, pos, stream, shape):
+        """A form depends only on the item and the pre-minted function set, never on call order."""
         for attempt in range(64):
             key_part = f"{lemma}/{pos}" if attempt == 0 else f"{lemma}/{pos}:retry:{attempt}"
-            rng = item_rng(self.seed, self.language_id, self.output_version, "lex", key_part)
+            rng = item_rng(self.seed, self.language_id, self.output_version, stream, key_part)
             form = self.phonology.make_root(rng, lemma, pos, shape=shape)
-            if form not in forbidden:
-                self.entries[key] = form
-                self.record(form, lemma.upper(), lemma, pos, "lexical")
+            if form not in self.function_forms:
                 return form
         fallback = item_rng(
-            self.seed, self.language_id, self.output_version, "lex", f"{lemma}/{pos}:fallback"
+            self.seed, self.language_id, self.output_version, stream, f"{lemma}/{pos}:fallback"
         )
-        form = self.phonology.make_root(
+        return self.phonology.make_root(
             fallback, lemma, pos, shape=shape
         ) + self.phonology.make_syllable(fallback, shape="function")
-        self.entries[key] = form
-        self.record(form, lemma.upper(), lemma, pos, "lexical")
-        return form
 
     def export(self):
         return [self._export_entries[key] for key in sorted(self._export_entries)]

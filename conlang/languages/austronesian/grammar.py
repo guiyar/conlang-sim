@@ -19,6 +19,9 @@ TAM_TABLES: Mapping[str, Mapping[str, str]] = MappingProxyType(
     }
 )
 
+# Articles are morphs, but their (lemma, POS) forms are reserved so no lexical root can take them.
+RESERVED_FUNCTION_WORDS = (("the", "DET"), ("a", "DET"), ("an", "DET"))
+
 PERSONAL_PRONOUN_TABLE = MappingProxyType(
     {
         ("1", "singular"): ("P1SG", "P1"),
@@ -334,7 +337,7 @@ class Realizer:
             )
             self.forms[name] = form
             used.add(form)
-        for lemma, pos in self.closed_class:
+        for lemma, pos in (*self.closed_class, *RESERVED_FUNCTION_WORDS):
             key = (lemma, pos)
             rng = item_rng(self.seed, self.language_id, self.output_version, "fn", f"{lemma}/{pos}")
             form = self._unique_form(
@@ -355,6 +358,8 @@ class Realizer:
     def function_morphs(self):
         forms = dict(self.forms)
         for (lemma, pos), form in self.closed_forms.items():
+            if (lemma, pos) in RESERVED_FUNCTION_WORDS:
+                continue
             key = lemma.upper()
             if key in forms:
                 key = f"{key}/{pos}"

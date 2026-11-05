@@ -23,7 +23,7 @@ def test_B0_public_function_and_lexicon_exports():
 def test_C1_catalog_has_version_two_articles():
     profile = discover_languages()["austronesian"]
     features = {feature.id for feature in profile.catalog.features}
-    assert profile.output_version == 3
+    assert profile.output_version == 4
     assert {"articles", "article_position"} <= features
 
 

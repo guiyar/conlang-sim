@@ -92,12 +92,14 @@ class Translator:
                     matching = next(
                         (
                             (lemma, pos, category)
-                            for (lemma, pos), category in [
-                                (key, "function" if key in self.lexicon.closed_forms else "lexical")
-                                for key in list(self.lexicon.entries)
-                                + list(self.lexicon.closed_forms)
+                            for (lemma, pos), category, known in [
+                                *((key, "lexical", f) for key, f in self.lexicon.entries.items()),
+                                *(
+                                    (key, "function", f)
+                                    for key, f in self.lexicon.closed_forms.items()
+                                ),
                             ]
-                            if lemma.upper() == morpheme.gloss
+                            if lemma.upper() == morpheme.gloss and known == form
                         ),
                         None,
                     )
