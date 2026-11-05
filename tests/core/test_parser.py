@@ -52,7 +52,7 @@ def test_weak_parser_cases_remain_robust():
     for text in ("dogs", "the cat walked", "They have walked.", "!!!"):
         result = parse(text)[0]
         assert result is not None
-        if not result.clause.predicate:
+        if result.clause.kind == "rootless":
             assert result.rules
 
 

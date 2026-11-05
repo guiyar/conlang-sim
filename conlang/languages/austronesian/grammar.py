@@ -430,7 +430,8 @@ class Realizer:
             head_words = [self._lexical_word(np.head, head_pos, lexicon)]
 
         if (
-            kind
+            self.features["noun_number"] != "none"
+            and kind
             not in {
                 "pronoun",
                 "proper",
@@ -530,17 +531,10 @@ class Realizer:
 
         for token in np.source_tokens:
             if token.disposition is None:
-                if token.dep == "det" and token.morph.get("Definite"):
-                    label = (
-                        article_label(
-                            self.features["articles"],
-                            "definite"
-                            if "Def" in token.morph.get("Definite", ())
-                            else "indefinite",
-                        )
-                        if self.features["articles"] != "none"
-                        else None
-                    )
+                if token.pos == "PUNCT":
+                    self._dispose(token, "absorbed", "punctuation")
+                elif token.dep == "det" and token.morph.get("Definite"):
+                    label = self._determiner_label(token)
                     self._dispose(
                         token,
                         "realized" if label else "absorbed",
@@ -549,6 +543,21 @@ class Realizer:
                 else:
                     self._dispose(token, "realized")
         return core_words
+
+    def _determiner_label(self, token):
+        if self.features["articles"] == "none":
+            return None
+        definiteness = "definite" if "Def" in token.morph.get("Definite", ()) else "indefinite"
+        return article_label(self.features["articles"], definiteness)
+
+    def determiner_word(self, token):
+        """Realize a bare article token, or absorb it when the dialect has no matching article."""
+        label = self._determiner_label(token)
+        if label is None:
+            self._dispose(token, "absorbed", "article distinction merged")
+            return None
+        self._dispose(token, "realized")
+        return self._function_word(label)
 
     def _function_word(self, name):
         return Word([self._m(name, "particle")])
@@ -562,7 +571,24 @@ class Realizer:
         words.extend(self._realize_clause(link.clause, lexicon, rules))
         return words
 
+    def _realize_fragments(self, clause, lexicon, rules):
+        sequence: list[Word] = []
+        if clause.kind == "interjection":
+            for token in clause.source_tokens:
+                if token.pos == "INTJ":
+                    lemma = (token.lemma or token.text).lower()
+                    sequence.append(self._lexical_word(lemma, "INTJ", lexicon))
+                    self._dispose(token, "realized")
+            return sequence
+        for argument in clause.arguments:
+            sequence.extend(self._np_words(argument.np, lexicon, rules))
+            for token in argument.source_tokens:
+                self._dispose(token, "realized")
+        return sequence
+
     def _realize_clause(self, clause, lexicon, rules):
+        if clause.kind in {"nominal", "interjection"}:
+            return self._realize_fragments(clause, lexicon, rules)
         verb = None
         if not (
             clause.predicate == "be" and clause.kind in {"equational", "locative", "existential"}

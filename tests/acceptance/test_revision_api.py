@@ -23,7 +23,7 @@ def test_B0_public_function_and_lexicon_exports():
 def test_C1_catalog_has_version_two_articles():
     profile = discover_languages()["austronesian"]
     features = {feature.id for feature in profile.catalog.features}
-    assert profile.output_version == 2
+    assert profile.output_version == 3
     assert {"articles", "article_position"} <= features
 
 
@@ -598,13 +598,13 @@ def test_E7_passive_by_phrase_keeps_its_adposition_before_the_agent():
 
 def test_E5_rootless_fallback_realizes_words_instead_of_source_english():
     translator = Translator(discover_languages()["austronesian"], 93)
-    result = translator.translate("Birds")[0]
+    result = translator.translate("very quickly")[0]
     assert result.fallback_spans
     assert result.words
     assert all(not word.literal for word in result.words)
     punctuation = translator.translate("!!!")[0]
     assert punctuation.words == []
-    rootless_ir = parse("Birds")[0]
+    rootless_ir = parse("very quickly")[0]
     translator._fallback_result(rootless_ir.source_text, None, rootless_ir)
     assert all(token.disposition is not None for token in rootless_ir.source_tokens)
 
@@ -674,6 +674,7 @@ def test_F3_cliticized_object_has_no_orphan_case_particle():
             "case_particles": "preposed",
             "voice_affix_position": "prefix",
             "pronoun_strategy": "clitic_verb",
+            "pronoun_number": "sg_pl",
         },
     )
     result = translator.translate("I see him.")[0]

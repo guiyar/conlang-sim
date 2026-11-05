@@ -45,7 +45,7 @@ class Translator:
         results = []
         for sentence in sentences:
             try:
-                if not sentence.clause.predicate:
+                if sentence.clause.kind == "rootless":
                     result = self._fallback_result(sentence.source_text, None, sentence)
                     result.rules = list(sentence.rules) + result.rules
                     results.append(result)
@@ -129,6 +129,11 @@ class Translator:
                 punctuation.append(token.text)
                 token.disposition = "absorbed"
                 token.disposition_reason = "punctuation"
+                continue
+            if token.dep == "det" and token.morph.get("Definite"):
+                word = self.realizer.determiner_word(token)
+                if word is not None:
+                    words.append(word)
                 continue
             if any(char.isdigit() for char in token.text) or token.pos == "PROPN":
                 words.append(Word([Morpheme((token.text,), token.text, "root")], literal=True))

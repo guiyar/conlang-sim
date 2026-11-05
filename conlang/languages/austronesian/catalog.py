@@ -14,7 +14,7 @@ EXCLUDED_FEATURES = (
 )
 
 
-OUTPUT_VERSION = 2
+OUTPUT_VERSION = 3
 
 
 def opt(name, attested=(), status=None, weight=1.0):
