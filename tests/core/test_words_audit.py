@@ -92,6 +92,18 @@ def test_infix_follows_complete_onset_and_surface_is_cached():
     assert word.gloss() == "ROOT<AF>"
 
 
+def test_invalid_infix_fallback_preserves_morpheme_sources():
+    root = Morpheme(("k", "a", "t"), "ROOT", "root", sources=(3,))
+    infix = Morpheme(("u",), "AF", "infix", sources=(7,))
+    word = Word([root])
+
+    word.add_infix(infix, onset_length=4)
+
+    assert word.morphemes[-1].kind == "suffix"
+    assert word.morphemes[-1].sources == (7,)
+    assert word.sources == (3, 7)
+
+
 def test_invalid_morpheme_kind_rejected():
     try:
         Morpheme(("a",), "X", "circumfix")

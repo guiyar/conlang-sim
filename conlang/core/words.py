@@ -63,7 +63,9 @@ class Word:
         roots = [i for i, m in enumerate(self.morphemes) if m.kind == "root"]
         if not roots or not 0 <= onset_length <= len(self.morphemes[roots[0]].segments):
             self.notes.append(f"infix {morpheme.gloss} fell back to suffixation")
-            self.add_suffix(Morpheme(morpheme.segments, morpheme.gloss, "suffix"))
+            self.add_suffix(
+                Morpheme(morpheme.segments, morpheme.gloss, "suffix", sources=morpheme.sources)
+            )
             return
         morpheme.position = onset_length
         self.morphemes.insert(roots[0] + 1, morpheme)
