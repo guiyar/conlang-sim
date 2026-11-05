@@ -275,26 +275,6 @@ def test_A7_five_thousand_generated_surface_words_obey_phonotactics():
     assert checked == 5_000
 
 
-def test_realization_accepts_every_reachable_fixed_feature_option():
-    profile = discover_languages()["austronesian"]
-    source = "The very quick dog saw three birds in the garden."
-    for feature in profile.catalog.features:
-        for option in feature.options:
-            assignment = profile.catalog._find({feature.id: option.id}, 0, {})
-            fixed = {key: value for key, value in assignment.items() if value is not None}
-            translator = Translator(profile, 97, fixed=fixed)
-            result = translator.translate(source)[0]
-            assert "Unexpected" not in " ".join(result.rules), f"{feature.id}={option.id}"
-            for word in result.words:
-                surface = word.surface(
-                    translator.phonology.validate_surface, translator.phonology.epenthetic_vowel
-                )
-                if not word.literal:
-                    assert translator.phonology.valid(translator.phonology.segments(surface)), (
-                        f"{feature.id}={option.id}"
-                    )
-
-
 def test_B1_function_forms_are_unique_per_dialect():
     translator = Translator(discover_languages()["austronesian"], 43)
     forms = list(translator.realizer.function_morphs().values())

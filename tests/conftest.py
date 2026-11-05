@@ -48,3 +48,10 @@ def sweep(request):
     """Scale a seed count down to a tenth (min 10) unless --full-sweeps is given."""
     full = request.config.getoption("--full-sweeps")
     return lambda count: count if full else min(count, max(10, count // 10))
+
+
+@pytest.fixture(scope="session")
+def profile():
+    from conlang.core.registry import discover_languages
+
+    return discover_languages()["austronesian"]
