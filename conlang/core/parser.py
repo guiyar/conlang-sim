@@ -21,6 +21,7 @@ from .ir import (
     PostModifier,
     SentenceIR,
 )
+from .ir_validation import validate_sentence_ir
 from .parsing.clause_builder import ClauseBuilder
 from .parsing.context import ParseContext
 from .parsing.english import EnglishParser
@@ -692,4 +693,4 @@ def parse(text):
         sentences.append(
             SentenceIR(clause, _span_text(sent), rules, [], list(source.values()), numeral_spans)
         )
-    return sentences
+    return [validate_sentence_ir(sentence) for sentence in sentences]

@@ -11,7 +11,9 @@ from conlang.core.ir import (
     NounPhrase,
     PostModifier,
     SentenceIR,
+    SourceToken,
 )
+from conlang.core.ir_validation import IRValidationError, validate_sentence_ir
 from conlang.core.registry import discover_languages
 from conlang.core.words import Morpheme, SurfaceEdit, SurfaceInsertion, SurfaceResult, Word
 
@@ -124,6 +126,33 @@ def test_audit_normalizes_nested_np_and_clause_link_paths():
     audited = AuditedIR(source)
     _ = audited.value.clause.arguments[0].np.post_modifiers[0].adposition
     assert audited.passes(set())
+
+
+def test_sentence_ir_validation_checks_categories_and_token_accounting():
+    valid = SentenceIR(
+        Clause(arguments=[Argument("subject", "other", NounPhrase("dog"))]),
+        "dog",
+        source_tokens=[SourceToken("dog", index=0)],
+    )
+    assert validate_sentence_ir(valid) is valid
+
+    invalid_category = SentenceIR(Clause(voice="middle"), "dog")
+    with pytest.raises(IRValidationError, match="invalid clause voice"):
+        validate_sentence_ir(invalid_category)
+
+    invalid_argument = SentenceIR(
+        Clause(arguments=[Argument("agent", "other", NounPhrase("dog"))]), "dog"
+    )
+    with pytest.raises(IRValidationError, match="invalid argument relation"):
+        validate_sentence_ir(invalid_argument)
+
+    duplicate_tokens = SentenceIR(
+        Clause(),
+        "dog dog",
+        source_tokens=[SourceToken("dog", index=0), SourceToken("dog", index=0)],
+    )
+    with pytest.raises(IRValidationError, match="duplicate source token index"):
+        validate_sentence_ir(duplicate_tokens)
 
 
 def test_infix_follows_complete_onset_and_surface_is_cached():
