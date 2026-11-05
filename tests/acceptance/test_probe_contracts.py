@@ -149,9 +149,9 @@ def test_probe_E2_to_E9_realize_required_lemmas_without_english_leak(
 
 
 def test_probe_E10_content_tokens_are_realized_or_noted():
-    import spacy
+    from conlang.core.parser import _model
 
-    nlp = spacy.load("en_core_web_sm")
+    nlp = _model()
     battery = [
         "The child saw two birds.",
         "My brother and I like fish.",

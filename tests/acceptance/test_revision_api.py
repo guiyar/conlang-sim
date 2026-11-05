@@ -252,17 +252,17 @@ def test_A7_five_thousand_generated_surface_words_obey_phonotactics():
     profile = discover_languages()["austronesian"]
     checked = 0
     for seed in range(200):
-        translator = Translator(profile, seed)
+        phonology = profile.phonology_class(
+            profile.catalog.sample(seed), seed, profile.language_id, profile.output_version
+        )
         for index in range(25):
             rng = item_rng(
                 seed, profile.language_id, profile.output_version, "acceptance", f"surface:{index}"
             )
-            root = translator.phonology.make_root(rng, shape="content")
-            word = Word([Morpheme(tuple(translator.phonology.segments(root)), "ROOT", "root")])
-            surface = word.surface(
-                translator.phonology.validate_surface, translator.phonology.epenthetic_vowel
-            )
-            assert translator.phonology.valid(translator.phonology.segments(surface))
+            root = phonology.make_root(rng, shape="content")
+            word = Word([Morpheme(tuple(phonology.segments(root)), "ROOT", "root")])
+            surface = word.surface(phonology.validate_surface, phonology.epenthetic_vowel)
+            assert phonology.valid(phonology.segments(surface))
             assert word.segmented().replace("-", "").replace("<", "").replace(">", "") == surface
             checked += 1
     assert checked == 5_000
