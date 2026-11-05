@@ -801,12 +801,15 @@ def test_F9_plain_alignment_rejects_vacuous_case_particles():
         raise AssertionError("plain alignment accepted vacuous case particles")
 
 
-def test_F10_modifier_submodifiers_stay_adjacent_in_english_order():
-    result = Translator(discover_languages()["austronesian"], 87).translate(
-        "The very quick dog ran."
-    )[0]
+def test_F10_modifier_submodifiers_stay_adjacent_and_follow_modifier_position():
+    translator = Translator(discover_languages()["austronesian"], 87)
+    result = translator.translate("The very quick dog ran.")[0]
     glosses = [word.gloss() for word in result.words]
-    assert glosses.index("VERY") + 1 == glosses.index("QUICK")
+    gap = glosses.index("VERY") - glosses.index("QUICK")
+    if translator.features["modifier_position"] == "before":
+        assert gap == -1
+    else:
+        assert gap == (2 if translator.features["linker"] == "particle" else 1)
 
 
 def test_F11_proper_names_and_digits_are_literal_and_exempt_from_phonotactics():

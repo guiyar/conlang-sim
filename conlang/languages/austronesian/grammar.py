@@ -120,6 +120,9 @@ def numeral_words(value):
 
 def tam_category(system, tense, perfect, progressive):
     if system in TAM_TABLES:
+        # Tense-only systems express the perfect as past.
+        if perfect and tense != "future":
+            tense = "past"
         return TAM_TABLES[system][tense]
     if tense == "future":
         return "contemplated"
@@ -159,6 +162,8 @@ class Realizer:
         "PROX",
         "DIST",
         "QUESTION",
+        "COMP",
+        "SUP",
     )
 
     def __init__(self, features, phonology, seed, language_id, output_version, closed_class=()):
@@ -198,6 +203,7 @@ class Realizer:
         if self.features["question"] != "none":
             names.append("QUESTION")
         names.append("NEG")
+        names.extend(("COMP", "SUP"))
         names.extend(
             ("P1SG", "P1PL", "P2", "P3SG", "P3PL")
             if self.features["pronoun_number"] == "sg_pl"
@@ -420,6 +426,28 @@ class Realizer:
         """Numeral words for a parsed value, as the noun-phrase path composes them."""
         return self._number_words(value, lexicon, [], sources=sources)
 
+    def _degree_word(self, degree, sources):
+        return self._function_word("COMP" if degree == "comparative" else "SUP", sources)
+
+    def _modified_words(self, item, lexicon, default_pos):
+        """A modifier word with its degree particle; its own modifiers follow modifier_position."""
+        words = [
+            self._lexical_word(
+                item.lemma.lower(), item.pos or default_pos, lexicon, sources=item.indices
+            )
+        ]
+        if item.degree != "none":
+            words.append(self._degree_word(item.degree, item.indices))
+        subs = [
+            word for sub in item.sub_modifiers for word in self._modified_words(sub, lexicon, "ADV")
+        ]
+        if self.features["modifier_position"] == "before":
+            return subs + words
+        link = (
+            [self._function_word("LINK")] if subs and self.features["linker"] == "particle" else []
+        )
+        return words + link + subs
+
     def _pronoun_label(self, np):
         return personal_pronoun_form(np.person, np.number, self.features["pronoun_number"])
 
@@ -465,6 +493,8 @@ class Realizer:
                 else np.pos or ("PRON" if kind in {"wh_pronoun", "other_pronoun"} else "NOUN")
             )
             head_words = [self._lexical_word(np.head, head_pos, lexicon, sources=np.head_indices)]
+            if np.degree != "none":
+                head_words.append(self._degree_word(np.degree, np.head_indices))
 
         if (
             self.features["noun_number"] != "none"
@@ -497,22 +527,7 @@ class Realizer:
                     modifier.value, lexicon, rules, modifier.text, modifier.indices
                 )
             else:
-                group = [
-                    self._lexical_word(
-                        modifier.lemma.lower(),
-                        modifier.pos or "ADJ",
-                        lexicon,
-                        None,
-                        modifier.indices,
-                    )
-                ]
-                sub_words = [
-                    self._lexical_word(
-                        item.lemma.lower(), item.pos or "ADV", lexicon, None, item.indices
-                    )
-                    for item in modifier.sub_modifiers
-                ]
-                group = sub_words + group
+                group = self._modified_words(modifier, lexicon, "ADJ")
             modifier_groups.append(group)
         modifier_words = [word for group in modifier_groups for word in group]
 
@@ -571,11 +586,7 @@ class Realizer:
                 core_words.extend(possessor_words)
 
         for adverb in np.adverbs:
-            core_words.append(
-                self._lexical_word(
-                    adverb.lemma.lower(), adverb.pos or "ADV", lexicon, sources=adverb.indices
-                )
-            )
+            core_words.extend(self._modified_words(adverb, lexicon, "ADV"))
 
         for post_modifier in np.post_modifiers:
             if post_modifier.kind == "prep":
@@ -641,7 +652,11 @@ class Realizer:
                     marker.lemma.lower(), marker.pos or "SCONJ", lexicon, sources=(marker.index,)
                 )
             )
-        words.extend(self._realize_clause(link.clause, lexicon, rules, embedded=True))
+        words.extend(
+            self._realize_clause(
+                link.clause, lexicon, rules, embedded=True, finite=link.relation != "xcomp"
+            )
+        )
         return words
 
     def _realize_fragments(self, clause, lexicon, rules):
@@ -666,7 +681,7 @@ class Realizer:
             return None
         return next((i for i, a in enumerate(clause.arguments) if a.relation == "object"), None)
 
-    def _realize_clause(self, clause, lexicon, rules, embedded=False):
+    def _realize_clause(self, clause, lexicon, rules, embedded=False, finite=True):
         if clause.kind in {"nominal", "interjection"}:
             return self._realize_fragments(clause, lexicon, rules)
         verb = None
@@ -679,7 +694,7 @@ class Realizer:
                 lexicon,
                 (clause.predicate_index,),
             )
-        if verb is not None and self.features["imperfective_reduplication"] == "yes":
+        if finite and verb is not None and self.features["imperfective_reduplication"] == "yes":
             category = tam_category(
                 self.features["tam_system"], clause.tense, clause.perfect, clause.progressive
             )
@@ -728,7 +743,9 @@ class Realizer:
             "imperfective": "IMPF",
         }[category]
         tam_particle = None
-        if self.features["tam_exponence"] == "particle":
+        if not finite:
+            pass
+        elif self.features["tam_exponence"] == "particle":
             tam_particle = self._function_word(tam_name)
         else:
             self._apply_affix(verb, tam_name, self.features.get("tam_affix_position", "prefix"))
@@ -816,10 +833,9 @@ class Realizer:
             word for relation, words in argument_words if relation != "subject" for word in words
         ]
         adverbs = [
-            self._lexical_word(
-                adverb.lemma.lower(), adverb.pos or "ADV", lexicon, sources=adverb.indices
-            )
+            word
             for adverb in clause.adverbs
+            for word in self._modified_words(adverb, lexicon, "ADV")
         ]
         verb_slot = [verb] if verb is not None else []
         preverbal_negation = (
@@ -827,7 +843,14 @@ class Realizer:
             if clause.polarity == "negative" and self.features["negation"] == "preverbal_particle"
             else []
         )
-        verb_prefix = ([tam_particle] if tam_particle else []) + preverbal_negation
+        modal_words = [
+            self._lexical_word(
+                modal.lemma.lower(), modal.pos or "AUX", lexicon, sources=modal.indices
+            )
+            for modal in clause.modals
+        ]
+        modal_indices = {index for modal in clause.modals for index in modal.indices}
+        verb_prefix = ([tam_particle] if tam_particle else []) + modal_words + preverbal_negation
         order = self.features["clause_order"]
         if order == "VSO":
             sequence = initial + verb_prefix + verb_slot + subjects + other_arguments + adverbs
@@ -856,6 +879,8 @@ class Realizer:
                 if token.index == clause.predicate_index:
                     self._dispose(token, "absorbed", "copula not expressed")
         for token in clause.source_tokens:
+            if token.index in modal_indices:
+                continue
             if token.pos == "AUX" or token.dep in {"aux", "auxpass"}:
                 self._dispose(token, "absorbed", "auxiliary contributes tense, aspect, or voice")
             elif token.dep == "neg" or token.text.lower() in {"not", "n't"}:

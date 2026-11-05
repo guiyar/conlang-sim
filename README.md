@@ -166,7 +166,7 @@ The tables below summarize the Austronesian source catalog. Option weights and o
 | `noun_number` | `none`, `particle`, `full_reduplication`, `partial_reduplication` | Malay, Indonesian, Tagalog / attested for partial reduplication | `np.number` |
 | `pronoun_strategy` | `free`, `clitic_second`, `clitic_verb` | Tagalog / attested for clitic_verb | `np.head.kind`, `argument.relation` |
 | `pronoun_number` | `sg_pl`, `unmarked` | invented | `np.pronoun.person`, `np.pronoun.number` |
-| `modifier_position` | `after` 0.65; `before` 0.35 | invented | `np.modifiers` |
+| `modifier_position` | `after` 0.65; `before` 0.35 | invented | `np.modifiers`, `np.degree` |
 | `linker` | `none`, `particle` | Tagalog / attested for particle | `np.modifiers` |
 | `possessor_position` | `before` 0.35; `after` 0.65 | invented | `np.possessor` |
 | `demonstratives` | `unmarked`, `two_way` | invented | `np.demonstrative`, `np.head.kind` |
@@ -241,9 +241,11 @@ TAM tables cover every combination of tense, perfect, and progressive, including
 
 | System | Mapping |
 |---|---|
-| `tense3` | past → past; present → present; future → future; unspecified → present |
-| `past_nonpast` | past → past; present, future, unspecified → nonpast |
+| `tense3` | perfect (not future) → past; past → past; present → present; future → future; unspecified → present |
+| `past_nonpast` | perfect (not future) → past; past → past; present, future, unspecified → nonpast |
 | `aspect3` | future → contemplated; past or perfect, unless progressive → perfective; all other cases → imperfective |
+
+Modals (`can`, `could`, `may`, `might`, `must`, `should`, `shall`) are closed-class `AUX` words placed after the TAM particle and before negation and the verb. Comparative and superlative adjectives and adverbs (spaCy `JJR`/`JJS`) take a `COMP` or `SUP` function particle right after the word. Infinitive (`xcomp`) clauses carry no tense or TAM marker. A modifier's own modifiers (`very quickly`) follow `modifier_position` and the linker like NP modifiers do.
 
 Equational, locative, and existential clauses have no copula. Modifier sub-adverbs stay adjacent to their modified word in English order. Possessors are full NPs in the selected position, with no possessive marker.
 

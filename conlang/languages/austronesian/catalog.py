@@ -164,7 +164,7 @@ FEATURES = (
         "modifier_position",
         "morphosyntax",
         [opt("after", weight=0.65), opt("before", weight=0.35)],
-        ("np.modifiers",),
+        ("np.modifiers", "np.degree"),
     ),
     feature(
         "linker",

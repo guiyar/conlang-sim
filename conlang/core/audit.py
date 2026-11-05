@@ -16,6 +16,8 @@ def _rebase_clause(path):
             return "source_token." + path.rsplit(f"{prefix}.marker.", 1)[1]
         if path.endswith(f"{prefix}.marker"):
             return "clause_link.marker"
+        if f"{prefix}." in path:
+            return "clause_link." + path.rsplit(f"{prefix}.", 1)[1]
     return path
 
 
@@ -89,6 +91,8 @@ class AuditedIR:
             normalized = normalized.replace("clause.adverbs[].", "modifier.")
             normalized = normalized.replace("np.predeterminers[].", "modifier.")
             normalized = normalized.replace("np.adverbs[].", "modifier.")
+            normalized = normalized.replace("clause.modals[].", "modifier.")
+            normalized = normalized.replace("modifier.sub_modifiers[].", "modifier.")
             normalized = normalized.replace("clause.arguments[].", "argument.")
             normalized = normalized.replace("clause.source_tokens[].", "source_token.")
             normalized = normalized.replace("np.source_tokens[].", "source_token.")

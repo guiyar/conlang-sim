@@ -158,6 +158,33 @@ def fallback_source(text):
     return [_revision_source_token(token) for token in doc], spans
 
 
+_MODALS = frozenset({"can", "could", "may", "might", "must", "should", "shall"})
+
+
+def _degree(token):
+    return {
+        "JJR": "comparative",
+        "RBR": "comparative",
+        "JJS": "superlative",
+        "RBS": "superlative",
+    }.get(token.tag_, "none")
+
+
+def _adverb(child):
+    return Modifier(
+        child.text,
+        child.lemma_.lower(),
+        "modifier",
+        child.pos_,
+        sub_modifiers=[
+            Modifier(adv.text, adv.lemma_.lower(), "modifier", adv.pos_, indices=(adv.i,))
+            for adv in child.children
+            if adv.dep_ == "advmod"
+        ],
+        indices=(child.i,),
+    )
+
+
 def _revision_clause_head(token):
     if token.dep_ in {"aux", "auxpass"}:
         return False
@@ -357,14 +384,20 @@ class _SentenceBuilder:
             else "positive"
         )
         adverbs = [
-            Modifier(child.text, child.lemma_.lower(), "modifier", child.pos_, indices=(child.i,))
+            _adverb(child)
             for child in children
             if child.dep_ == "advmod" and child.lower_ not in {"not", "n't"}
+        ]
+        modals = [
+            Modifier(child.text, child.lemma_.lower(), "modal", child.pos_, indices=(child.i,))
+            for child in children
+            if child.dep_ == "aux" and child.tag_ == "MD" and child.lemma_.lower() in _MODALS
         ]
         clause = Clause(
             predicate=root.lemma_.lower(),
             predicate_pos=root.pos_,
             predicate_index=root.i,
+            modals=modals,
             kind=kind,
             polarity=polarity,
             tense=tense,
@@ -491,7 +524,7 @@ class _SentenceBuilder:
             if child.dep_ == "predet"
         ]
         adverbs = [
-            Modifier(child.text, child.lemma_.lower(), "modifier", child.pos_, indices=(child.i,))
+            _adverb(child)
             for child in sorted(token.children, key=lambda item: item.i)
             if child.dep_ == "advmod"
         ]
@@ -568,6 +601,7 @@ class _SentenceBuilder:
                     any(char.isdigit() for char in child.text),
                     sub_modifiers,
                     self._indices(child),
+                    _degree(child),
                 )
             )
         for digit_token in digit_tokens:
@@ -683,6 +717,7 @@ class _SentenceBuilder:
             demonstrative_index=demonstrative_index,
             predeterminers=predeterminers,
             adverbs=adverbs,
+            degree=_degree(token),
         )
 
     def _is_plain_np(self, token):

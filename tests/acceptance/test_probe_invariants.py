@@ -237,3 +237,39 @@ def test_dative_shift_and_prepositional_recipients_are_marked_alike(name, transl
 
     assert marker(shifted) == marker(prepositional), name
     assert marker(shifted) in {"TO", "OBL"}, name
+
+
+TAM_TAGS = {"PAST", "PRESENT", "FUTURE", "NONPAST", "CONT", "PERF", "IMPF"}
+
+
+def _tags(translator, text):
+    return [m.gloss for m in morphemes(translator.translate(text)[0].words)]
+
+
+@pytest.mark.parametrize("name,translator", ALL, ids=IDS)
+def test_perfect_modals_degree_and_infinitives(name, translator):
+    perfect = _tags(translator, "The cat has eaten the dog.")
+    plain = _tags(translator, "The cat eats the dog.")
+    assert perfect != plain, name
+    if translator.features["tam_system"] == "aspect3":
+        assert "PERF" in perfect, name
+    else:
+        assert "PAST" in perfect, name
+    assert "CAN" in _tags(translator, "The cat can eat the dog."), name
+    assert "COMP" in _tags(translator, "This dog is bigger than that cat."), name
+    assert "SUP" in _tags(translator, "The cat is the biggest."), name
+    infinitive = _tags(translator, "I want to eat.")
+    assert len([t for t in infinitive if t in TAM_TAGS]) == 1, (name, infinitive)
+
+
+@pytest.mark.parametrize("name,translator", ALL, ids=IDS)
+def test_adverb_modifiers_follow_modifier_position_and_linker(name, translator):
+    result = translator.translate("The cat very quickly ate the dog.")[0]
+    assert not any("residual" in rule for rule in result.rules), name
+    tags = [m.gloss for m in morphemes(result.words)]
+    quickly, very = tags.index("QUICKLY"), tags.index("VERY")
+    if translator.features["modifier_position"] == "before":
+        assert very + 1 == quickly, (name, tags)
+    else:
+        gap = 2 if translator.features["linker"] == "particle" else 1
+        assert very - quickly == gap, (name, tags)

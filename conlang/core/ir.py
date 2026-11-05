@@ -30,6 +30,8 @@ STRUCTURAL_FIELDS = frozenset(
         "np.demonstrative_index",
         "np.predeterminers",
         "np.adverbs",
+        "clause.modals",
+        "modifier.degree",
         "modifier.indices",
         "modifier.lemma",
         "post_modifier.index",
@@ -87,6 +89,7 @@ VALID_SOURCE_FIELDS = frozenset(
         "np.modifiers",
         "np.possessor",
         "np.definiteness",
+        "np.degree",
         "np.possessor.np",
         "np.post_modifiers",
         "np.coordinated",
@@ -134,6 +137,8 @@ IR_FIELD_JUSTIFICATIONS = MappingProxyType(
         "np.demonstrative_index": "The demonstrative token is the provenance of the demonstrative word.",
         "np.predeterminers": "Predeterminers (all, both, half) are closed-class words before the NP.",
         "np.adverbs": "NP-attached adverbs follow the noun phrase.",
+        "clause.modals": "Modal auxiliaries are closed-class words before the verb.",
+        "modifier.degree": "Comparative/superlative morphology of a modifier.",
         "modifier.indices": "Source token indices give modifier words their provenance.",
         "post_modifier.index": "The source adposition token is the provenance of the adposition word.",
         "argument.preposition_index": "The source preposition token is the provenance of its word.",
@@ -166,6 +171,7 @@ class Modifier:
     literal: bool = False
     sub_modifiers: list = field(default_factory=list)
     indices: tuple = ()
+    degree: str = "none"
 
 
 @dataclass
@@ -221,6 +227,7 @@ class NounPhrase:
     demonstrative_index: int | None = None
     predeterminers: list = field(default_factory=list)
     adverbs: list = field(default_factory=list)
+    degree: str = "none"
 
 
 @dataclass
@@ -254,6 +261,7 @@ class Clause:
     argument_order: list = field(default_factory=list)
     links: list = field(default_factory=list)
     predicate_index: int | None = None
+    modals: list = field(default_factory=list)
 
 
 @dataclass
