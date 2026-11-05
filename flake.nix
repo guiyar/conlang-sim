@@ -17,7 +17,7 @@
       devShells = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
-          python = pkgs.python312;
+          python = pkgs.python3;
           spacy = python.pkgs.spacy;
           model = python.pkgs.buildPythonPackage {
             pname = "en-core-web-sm";
@@ -31,8 +31,12 @@
             doCheck = false;
           };
           pythonEnv = python.withPackages (packages: [
+            packages.coverage
+            packages.mypy
             packages.pytest
+            packages.ruff
             packages.spacy
+            packages.vulture
             model
           ]);
         in

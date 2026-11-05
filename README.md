@@ -40,7 +40,7 @@ The supplied root-level `acceptance_probe.py` is excluded from automatic formatt
 
 ### Nix
 
-The flake provides Python 3.12, pytest, spaCy 3.8, and the SHA-256-pinned `en_core_web_sm` 3.8.0 wheel:
+The flake provides Python 3, spaCy 3.8, the SHA-256-pinned `en_core_web_sm` 3.8.0 wheel and Python quality tooling:
 
 ```bash
 nix develop
@@ -48,7 +48,7 @@ python -m pytest
 python -m conlang.cli --seed 42 "The child saw two birds."
 ```
 
-The nixpkgs source is pinned to a release commit. The model wheel is fetched and verified during Nix realization, not at application runtime.
+The model wheel is fetched and verified during Nix realization, not at application runtime.
 
 ## CLI
 
