@@ -10,6 +10,21 @@ from conlang.languages.austronesian.catalog import CATALOG
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _profile(language_id, catalog=CATALOG):
+    return SimpleNamespace(
+        language_id=language_id,
+        name=language_id,
+        description="test profile",
+        output_version=1,
+        catalog=catalog,
+        phonology_class=lambda *args: None,
+        realizer_class=lambda *args: None,
+        phonology=lambda *args: None,
+        realize=lambda *args: None,
+        describe=lambda *args: "",
+    )
+
+
 def test_architecture_core_has_no_profile_imports_and_only_english_parser_imports_spacy():
     core = ROOT / "conlang" / "core"
     spacy_imports = []
@@ -44,14 +59,8 @@ def test_template_package_is_working_but_not_discovered():
 
 
 def test_registry_rejects_duplicate_ids_and_invalid_catalogs(monkeypatch):
-    profile = SimpleNamespace(
-        language_id="duplicate_test",
-        output_version=2,
-        catalog=CATALOG,
-        phonology=lambda *args: None,
-        realize=lambda *args: None,
-        describe=lambda *args: "",
-    )
+    profile = _profile("duplicate_test")
+    profile.output_version = 2
     monkeypatch.setitem(registry.LANGUAGES, "duplicate_test", profile)
     with pytest.raises(ValueError, match="duplicate language ID"):
         registry.register_language(profile)
@@ -61,16 +70,32 @@ def test_registry_rejects_duplicate_ids_and_invalid_catalogs(monkeypatch):
         def validate_catalog():
             raise ValueError("bad catalog")
 
-    invalid = SimpleNamespace(
-        language_id="invalid_test",
-        output_version=1,
-        catalog=InvalidCatalog(),
-        phonology=lambda *args: None,
-        realize=lambda *args: None,
-        describe=lambda *args: "",
-    )
+    invalid = _profile("invalid_test", InvalidCatalog())
     with pytest.raises(ValueError, match="bad catalog"):
         registry.register_language(invalid)
+
+
+def test_language_registries_are_independent_and_validate_profile_callables():
+    first = registry.LanguageRegistry()
+    second = registry.LanguageRegistry()
+    profile = _profile("isolated_test")
+
+    first.register(profile)
+
+    assert first.get("isolated_test") is profile
+    assert first.available() == ("isolated_test",)
+    assert second.available() == ()
+    assert "isolated_test" not in registry.LANGUAGES
+
+    discovered = second.discover()
+
+    assert "austronesian" in discovered
+    assert "austronesian" not in first.profiles
+
+    malformed = _profile("malformed_test")
+    malformed.realize = None
+    with pytest.raises(TypeError, match="realize must be callable"):
+        second.register(malformed)
 
 
 def test_discovery_skips_underscores_and_reports_broken_plugins(monkeypatch):
