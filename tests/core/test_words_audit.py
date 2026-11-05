@@ -14,8 +14,13 @@ from conlang.core.ir import (
     SourceToken,
     TokenDispositionLedger,
 )
-from conlang.core.ir_validation import IRValidationError, validate_sentence_ir
+from conlang.core.ir_validation import (
+    IRValidationError,
+    finalize_sentence_ir,
+    validate_sentence_ir,
+)
 from conlang.core.registry import discover_languages
+from conlang.core.results import info, is_info
 from conlang.core.words import Morpheme, SurfaceEdit, SurfaceInsertion, SurfaceResult, Word
 
 
@@ -187,6 +192,36 @@ def test_token_disposition_ledger_is_separate_until_synchronized():
     assert ledger.get(3) == ("realized", None)
     ledger.sync([token])
     assert token.disposition == "realized"
+
+
+def test_finalized_sentence_ir_is_an_immutable_snapshot():
+    source = SentenceIR(
+        Clause(
+            arguments=[Argument("subject", "other", NounPhrase("dog"))],
+        ),
+        "dog",
+        rules=[info("detail hidden by default")],
+        source_tokens=[SourceToken("dog", morph={"Number": ("Sing",)}, index=0)],
+    )
+
+    finalized = finalize_sentence_ir(source)
+
+    source.clause.arguments[0].np.head = "cat"
+    source.source_tokens[0].morph["Number"] = ("Plur",)
+    source.rules.append("later note")
+
+    assert finalized.clause.arguments[0].np.head == "dog"
+    assert finalized.source_tokens[0].morph["Number"] == ("Sing",)
+    assert finalized.rules == ("detail hidden by default",)
+    assert is_info(finalized.rules[0])
+    with pytest.raises(FrozenInstanceError):
+        finalized.clause.voice = "passive"
+    with pytest.raises(AttributeError, match="finalized note is immutable"):
+        finalized.rules[0].level = "notice"
+    with pytest.raises(AttributeError):
+        finalized.clause.arguments.append(Argument("object", "other", NounPhrase("cat")))
+    with pytest.raises(TypeError):
+        finalized.source_tokens[0].morph["Number"] = ("Plur",)
 
 
 def test_infix_follows_complete_onset_and_surface_is_cached():

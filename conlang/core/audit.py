@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass, is_dataclass
 from types import MappingProxyType
 
+from .final_ir import FinalSourceToken
 from .ir import STRUCTURAL_FIELDS, SourceToken, TokenDispositionLedger
 
 
@@ -119,7 +120,10 @@ class _Proxy:
         reads = object.__getattribute__(self, "_reads")
         reads.add(path)
         ledger = object.__getattribute__(self, "_disposition_ledger")
-        if isinstance(value, SourceToken) and name in {"disposition", "disposition_reason"}:
+        if isinstance(value, (SourceToken, FinalSourceToken)) and name in {
+            "disposition",
+            "disposition_reason",
+        }:
             state = ledger.get(value.index) if ledger is not None else None
             if state is not None:
                 return state[0] if name == "disposition" else state[1]
@@ -129,7 +133,7 @@ class _Proxy:
     def __setattr__(self, name, value):
         target = object.__getattribute__(self, "_value")
         ledger = object.__getattribute__(self, "_disposition_ledger")
-        if isinstance(target, SourceToken) and ledger is not None:
+        if isinstance(target, (SourceToken, FinalSourceToken)) and ledger is not None:
             if name == "disposition":
                 ledger.set_disposition(target.index, value)
                 return
@@ -157,6 +161,8 @@ def _wrap(value, path, reads, disposition_ledger):
     if is_dataclass(value):
         return _Proxy(value, path, reads, disposition_ledger)
     if isinstance(value, list):
+        return tuple(_wrap(item, f"{path}[]", reads, disposition_ledger) for item in value)
+    if isinstance(value, tuple):
         return tuple(_wrap(item, f"{path}[]", reads, disposition_ledger) for item in value)
     if isinstance(value, dict):
         return MappingProxyType(

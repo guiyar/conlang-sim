@@ -2,6 +2,7 @@
 
 from .audit import AuditedIR
 from .ir import TokenDispositionLedger
+from .ir_validation import finalize_sentence_ir
 from .lexicon import Lexicon
 from .parser import numeral_value, parse
 from .results import ClauseResult
@@ -52,7 +53,8 @@ class Translator:
                     results.append(self._fallback_result(sentence.source_text, None, sentence))
                     continue
                 dispositions = TokenDispositionLedger(sentence.source_tokens)
-                audited = AuditedIR(sentence, dispositions)
+                finalized = finalize_sentence_ir(sentence)
+                audited = AuditedIR(finalized, dispositions)
                 allowed = {
                     source_field
                     for feature in self.profile.catalog.features
