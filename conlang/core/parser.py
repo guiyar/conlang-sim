@@ -41,6 +41,31 @@ def _model():
     return nlp
 
 
+def _is_all_caps(text):
+    letters = [char for char in text if char.isalpha()]
+    return len(letters) >= 2 and all(char.isupper() for char in letters)
+
+
+def _analyze(text):
+    """Parse a lowercased copy of all-caps text; the original text stays available."""
+    parse_text = text.lower() if _is_all_caps(text) and len(text.lower()) == len(text) else text
+    doc = _model()(parse_text)
+    doc.user_data["original"] = text
+    return doc
+
+
+def _original(token):
+    original = token.doc.user_data.get("original")
+    if original is None:
+        return token.text
+    return original[token.idx : token.idx + len(token.text)]
+
+
+def _span_text(span):
+    original = span.doc.user_data.get("original")
+    return span.text if original is None else original[span.start_char : span.end_char]
+
+
 def _morph(token):
     return {key: tuple(value.split(",")) for key, value in token.morph.to_dict().items()}
 
@@ -107,7 +132,7 @@ _NUMBER_WORDS = (
 
 def _revision_source_token(token):
     return SourceToken(
-        token.text,
+        _original(token),
         token.lemma_,
         token.pos_,
         token.tag_,
@@ -153,7 +178,7 @@ def _revision_number_value(tokens):
 
 def fallback_source(text):
     """Source tokens and CARDINAL spans for text that never reached the sentence parser."""
-    doc = _model()(text)
+    doc = _analyze(text)
     spans = [(ent.start, ent.end) for ent in doc.ents if ent.label_ == "CARDINAL"]
     return [_revision_source_token(token) for token in doc], spans
 
@@ -242,6 +267,7 @@ def _revision_mood_tam_kind(root, sentence, main):
     return children, voice, tense, perfect, progressive, mood, kind
 
 
+_NAME_ENTITIES = frozenset({"GPE", "PERSON", "ORG", "LOC", "FAC", "NORP"})
 _NP_DEPS = frozenset(
     {"det", "amod", "compound", "nummod", "quantmod", "poss", "nmod:poss", "prep", "predet"}
     | {"advmod"}
@@ -286,6 +312,30 @@ class _SentenceBuilder:
             index -= 1
         return symbols
 
+    @staticmethod
+    def _proper_span(token):
+        """First and last token of a multiword proper name headed by `token`, or None."""
+        doc = token.doc
+        parts = {
+            c.i
+            for c in token.children
+            if c.pos_ == "PROPN" and c.dep_ in {"compound", "flat", "flat:name", "nmod"}
+        }
+        left = right = token.i
+        while left - 1 in parts:
+            left -= 1
+        while right + 1 in parts:
+            right += 1
+        for ent in doc.ents:
+            if ent.start <= token.i < ent.end and ent.label_ in _NAME_ENTITIES:
+                start = ent.start
+                while start < ent.end and doc[start].pos_ != "PROPN":
+                    start += 1
+                low, high = min(left, start), max(right, ent.end - 1)
+                if all(doc[i].pos_ == "PROPN" for i in range(low, high + 1)):
+                    left, right = low, high
+        return (left, right) if left != right else None
+
     def _indices(self, token):
         """The token's index plus any currency symbols fused into its literal text."""
         if not any(char.isdigit() for char in token.text):
@@ -295,7 +345,7 @@ class _SentenceBuilder:
     def _symbol_text(self, token):
         """Digit tokens keep a leading currency symbol attached, as one literal."""
         if not any(char.isdigit() for char in token.text):
-            return token.text
+            return _original(token)
         prefix = "".join(c.text + c.whitespace_ for c in self._leading_symbols(token))
         return prefix + token.text
 
@@ -444,7 +494,7 @@ class _SentenceBuilder:
     def build_np(self, token, seen=None):
         seen = set() if seen is None else seen
         if token.i in seen:
-            return NounPhrase(token.lemma_.lower(), pos=token.pos_, surface=token.text)
+            return NounPhrase(token.lemma_.lower(), pos=token.pos_, surface=_original(token))
         seen.add(token.i)
         pron_types = set(token.morph.get("PronType"))
         person = _morph_value(token, "Person", {"1", "2", "3"})
@@ -516,6 +566,7 @@ class _SentenceBuilder:
         digit_tokens = [item for item in own_tokens if any(char.isdigit() for char in item.text)]
         numeral_value = None if digit_tokens else _revision_number_value(number_tokens)
         modifiers: list[Modifier] = []
+        name_span = self._proper_span(token) if np_kind == "proper" else None
         predeterminers = [
             Modifier(
                 child.text, child.lemma_.lower(), "predeterminer", child.pos_, indices=(child.i,)
@@ -546,6 +597,8 @@ class _SentenceBuilder:
                 )
         for child in sorted(token.children, key=lambda item: item.i):
             if child.pos_ == "SYM":
+                continue
+            if name_span is not None and name_span[0] <= child.i <= name_span[1]:
                 continue
             if child in number_tokens and child is not token:
                 if (
@@ -703,13 +756,19 @@ class _SentenceBuilder:
                 self.source_for(item) for item in token.subtree if self.source_for(item)
             ],
             morphology=_morph(token),
-            surface=self._symbol_text(token),
+            surface=(
+                _span_text(token.doc[name_span[0] : name_span[1] + 1])
+                if name_span is not None
+                else self._symbol_text(token)
+            ),
             pos=token.pos_,
             definiteness=definiteness,
             numeral_value=numeral_value,
             literal=any(char.isdigit() for char in token.text),
             head_indices=(
-                tuple(item.i for item in number_tokens)
+                tuple(range(name_span[0], name_span[1] + 1))
+                if name_span is not None
+                else tuple(item.i for item in number_tokens)
                 if np_kind == "number" and numeral_value is not None
                 else self._indices(token)
             ),
@@ -770,7 +829,7 @@ def parse(text):
     """Return one SentenceIR per sentence, preserving linked verbal heads."""
     if not text or not text.strip():
         return []
-    doc = _model()(text)
+    doc = _analyze(text)
     sentences = []
     for sent in doc.sents:
         source = {token.i: _revision_source_token(token) for token in sent}
@@ -787,7 +846,7 @@ def parse(text):
                 sentences.append(
                     SentenceIR(
                         fragment_clause,
-                        sent.text,
+                        _span_text(sent),
                         [],
                         [],
                         list(source.values()),
@@ -795,14 +854,14 @@ def parse(text):
                     )
                 )
                 continue
-            fragment = [[token.text for token in sent]]
+            fragment = [[_original(token) for token in sent]]
             clause = Clause(
                 kind="rootless", fragments=fragment, source_tokens=list(source.values())
             )
             sentences.append(
                 SentenceIR(
                     clause,
-                    sent.text,
+                    _span_text(sent),
                     ["No verbal or be root found; source tokens use conlang lexical fallback."],
                     fragment,
                     list(source.values()),
@@ -823,6 +882,8 @@ def parse(text):
                 )
             )
         sentences.append(
-            SentenceIR(clause, sent.text, rules, [], list(source.values()), builder.numeral_spans)
+            SentenceIR(
+                clause, _span_text(sent), rules, [], list(source.values()), builder.numeral_spans
+            )
         )
     return sentences

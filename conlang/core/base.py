@@ -134,6 +134,20 @@ class Translator:
             if value is not None:
                 numerals[start] = (span, value)
         covered = {token.index for span, _ in numerals.values() for token in span}
+        names = {}
+        run: list = []
+        for token in [*source_tokens, None]:
+            if (
+                token is not None
+                and token.pos == "PROPN"
+                and (not run or token.index == run[-1].index + 1)
+            ):
+                run.append(token)
+                continue
+            if len(run) > 1:
+                names[run[0].index] = run
+                covered.update(item.index for item in run[1:])
+            run = [token] if token is not None and token.pos == "PROPN" else []
         words = []
         punctuation = []
         for token in source_tokens:
@@ -160,6 +174,24 @@ class Translator:
                         )
                     else:
                         item.disposition = "realized"
+                continue
+            if token.index in names:
+                name = names[token.index]
+                words.append(
+                    Word(
+                        [
+                            Morpheme(
+                                (" ".join(item.text for item in name),),
+                                " ".join(item.text for item in name),
+                                "root",
+                                sources=tuple(item.index for item in name),
+                            )
+                        ],
+                        literal=True,
+                    )
+                )
+                for item in name:
+                    item.disposition = "realized"
                 continue
             if token.index in covered:
                 continue

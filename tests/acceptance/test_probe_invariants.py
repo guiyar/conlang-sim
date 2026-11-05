@@ -16,6 +16,7 @@ from probes import (
 )
 
 from conlang.core.base import Translator
+from conlang.core.parser import parse
 from conlang.core.results import is_info
 
 DIALECTS = list(dialect_translators())
@@ -273,3 +274,37 @@ def test_adverb_modifiers_follow_modifier_position_and_linker(name, translator):
     else:
         gap = 2 if translator.features["linker"] == "particle" else 1
         assert very - quickly == gap, (name, tags)
+
+
+def _literals(result):
+    # A second-position clitic may be appended to a literal; compare the literal itself.
+    return ["".join(w.morphemes[0].segments) for w in result.words if w.literal]
+
+
+@pytest.mark.parametrize("name,translator", ALL, ids=IDS)
+def test_all_caps_input_is_parsed_as_ordinary_text(name, translator):
+    shouted = translator.translate("THE CAT ATE THE DOG")[0]
+    plain = translator.translate("the cat ate the dog")[0]
+    assert [w.surface() for w in shouted.words] == [w.surface() for w in plain.words], name
+    assert shouted.source_text == "THE CAT ATE THE DOG"
+    assert not _literals(shouted)
+
+
+@pytest.mark.parametrize("name,translator", ALL, ids=IDS)
+def test_multiword_proper_names_are_one_literal(name, translator):
+    result = translator.translate("Mary and John saw New York.")[0]
+    assert sorted(_literals(result)) == ["John", "Mary", "New York"], name
+    result = translator.translate("I saw Barack Obama in the United States.")[0]
+    assert sorted(_literals(result)) == ["Barack Obama", "United States"], name
+
+
+def test_all_caps_keeps_the_original_spelling_in_the_ledger():
+    sentence = parse("THE CAT ATE THE DOG")[0]
+    assert [t.text for t in sentence.source_tokens][:2] == ["THE", "CAT"]
+    assert sentence.source_text == "THE CAT ATE THE DOG"
+
+
+def test_fallback_groups_adjacent_proper_nouns():
+    translator = make_translator(MATRIX[0])
+    result = translator._fallback_result("New York", RuntimeError("forced"))
+    assert _literals(result) == ["New York"]
