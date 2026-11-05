@@ -238,3 +238,12 @@ def test_pinned_parser_fixture_fields_keep_pos_definiteness_numerals_and_structu
     assert post_modifier.kind == "prep" and post_modifier.adposition == "of"
     assert numeral.numeral_value == 305
     assert parse("Who left?")[0].clause.arguments[0].np.kind == "wh_pronoun"
+
+
+def test_negation_belongs_to_the_clause_it_modifies():
+    main = parse("I think he didn't leave.")[0].clause
+    assert main.polarity == "positive"
+    assert main.links[0].clause.polarity == "negative"
+    for text in ("He didn't leave.", "He has not eaten.", "He never eats.", "Don't eat."):
+        assert parse(text)[0].clause.polarity == "negative", text
+    assert parse("He left.")[0].clause.polarity == "positive"

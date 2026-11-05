@@ -428,16 +428,13 @@ class _SentenceBuilder:
                     token.head.i if marker is not None else None,
                 )
             )
+        negation_heads = {root, *(c for c in children if c.dep_ in {"aux", "auxpass"})}
         polarity = (
             "negative"
-            if any(token.lower_ in {"not", "n't"} for token in root.subtree)
+            if any(c.dep_ == "neg" and c.head in negation_heads for c in root.subtree)
             else "positive"
         )
-        adverbs = [
-            _adverb(child)
-            for child in children
-            if child.dep_ == "advmod" and child.lower_ not in {"not", "n't"}
-        ]
+        adverbs = [_adverb(child) for child in children if child.dep_ == "advmod"]
         modals = [
             Modifier(child.text, child.lemma_.lower(), "modal", child.pos_, indices=(child.i,))
             for child in children
