@@ -193,10 +193,11 @@ def _revision_mood_tam_kind(root, sentence, main):
         main and root.tag_ == "VB" and subject is None and not auxiliaries and not interrogative
     )
     mood = "interrogative" if interrogative else "imperative" if imperative else "declarative"
+    expletive = any(child.dep_ == "expl" for child in children)
     if root.lemma_.lower() == "be":
         kind = (
             "existential"
-            if any(child.dep_ == "expl" for child in children)
+            if expletive
             else (
                 "equational"
                 if any(child.dep_ in {"attr", "acomp"} for child in children)
@@ -206,7 +207,7 @@ def _revision_mood_tam_kind(root, sentence, main):
             )
         )
     else:
-        kind = "verbal"
+        kind = "existential" if expletive else "verbal"
     return children, voice, tense, perfect, progressive, mood, kind
 
 

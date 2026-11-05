@@ -754,6 +754,8 @@ class Realizer:
                 self._dispose(token, "absorbed", "auxiliary contributes tense, aspect, or voice")
             elif token.dep == "neg" or token.text.lower() in {"not", "n't"}:
                 self._dispose(token, "absorbed", "polarity particle")
+            elif token.dep == "expl":
+                self._dispose(token, "absorbed", "expletive")
             elif token.pos == "PUNCT":
                 self._dispose(token, "absorbed", "punctuation")
 
