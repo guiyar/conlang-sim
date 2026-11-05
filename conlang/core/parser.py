@@ -1,7 +1,5 @@
 """spaCy boundary: parse English and immediately convert to language-neutral IR."""
 
-from functools import lru_cache
-from types import MappingProxyType
 from typing import Any
 
 from .ir import (
@@ -17,117 +15,27 @@ from .ir import (
     SentenceIR,
     SourceToken,
 )
+from .parsing.english import EnglishParser
+from .parsing.grammar import GrammarAnalyzer
+from .parsing.numeral import is_number_word, numeral_value
 from .results import info
 from .roles import argument_role
 
-MODEL_NAME = "en_core_web_sm"
-MODEL_VERSION = "3.8.0"
-
-
-@lru_cache(maxsize=1)
-def _model():
-    try:
-        import spacy
-
-        nlp = spacy.load(MODEL_NAME)
-    except Exception as error:
-        raise RuntimeError(
-            "English parser unavailable. Install with: python -m spacy download en_core_web_sm-3.8.0"
-        ) from error
-    if nlp.meta.get("version") != MODEL_VERSION:
-        raise RuntimeError(
-            f"Expected {MODEL_NAME} {MODEL_VERSION}, found {nlp.meta.get('version')}. Install with: python -m spacy download en_core_web_sm-3.8.0"
-        )
-    return nlp
-
-
-def _is_all_caps(text):
-    letters = [char for char in text if char.isalpha()]
-    return len(letters) >= 2 and all(char.isupper() for char in letters)
-
-
-def _analyze(text):
-    """Parse a lowercased copy of all-caps text; the original text stays available."""
-    parse_text = text.lower() if _is_all_caps(text) and len(text.lower()) == len(text) else text
-    doc = _model()(parse_text)
-    doc.user_data["original"] = text
-    return doc
-
-
-def _original(token):
-    original = token.doc.user_data.get("original")
-    if original is None:
-        return token.text
-    return original[token.idx : token.idx + len(token.text)]
-
-
-def _span_text(span):
-    original = span.doc.user_data.get("original")
-    return span.text if original is None else original[span.start_char : span.end_char]
+MODEL_NAME = EnglishParser.MODEL_NAME
+MODEL_VERSION = EnglishParser.MODEL_VERSION
+_model = EnglishParser.model
+_is_all_caps = EnglishParser.is_all_caps
+_analyze = EnglishParser.analyze
+_original = EnglishParser.original
+_span_text = EnglishParser.span_text
 
 
 def _morph(token):
     return {key: tuple(value.split(",")) for key, value in token.morph.to_dict().items()}
 
 
-def _morph_value(token, key, allowed):
-    values = token.morph.get(key)
-    return values[0].lower() if values and values[0].lower() in allowed else UNSPECIFIED
-
-
 def parser_versions():
-    import importlib.metadata
-
-    try:
-        spacy_version = importlib.metadata.version("spacy")
-    except importlib.metadata.PackageNotFoundError:
-        spacy_version = "missing"
-    try:
-        model_version = importlib.metadata.version("en-core-web-sm")
-    except importlib.metadata.PackageNotFoundError:
-        model_version = "missing"
-    return {"spacy": spacy_version, "model": model_version}
-
-
-_ONES = MappingProxyType(
-    {
-        "zero": 0,
-        "one": 1,
-        "two": 2,
-        "three": 3,
-        "four": 4,
-        "five": 5,
-        "six": 6,
-        "seven": 7,
-        "eight": 8,
-        "nine": 9,
-        "ten": 10,
-        "eleven": 11,
-        "twelve": 12,
-        "thirteen": 13,
-        "fourteen": 14,
-        "fifteen": 15,
-        "sixteen": 16,
-        "seventeen": 17,
-        "eighteen": 18,
-        "nineteen": 19,
-    }
-)
-_TENS = MappingProxyType(
-    {
-        "twenty": 20,
-        "thirty": 30,
-        "forty": 40,
-        "fifty": 50,
-        "sixty": 60,
-        "seventy": 70,
-        "eighty": 80,
-        "ninety": 90,
-    }
-)
-_NUMBER_WORDS = (
-    frozenset(_ONES) | frozenset(_TENS) | {"hundred", "thousand", "million", "billion", "and", "a"}
-)
+    return EnglishParser.versions()
 
 
 def _revision_source_token(token):
@@ -143,35 +51,6 @@ def _revision_source_token(token):
     )
 
 
-def numeral_value(texts):
-    words: list[str] = []
-    for text in texts:
-        words.extend(
-            part for part in text.lower().replace("-", " ").split() if part in _NUMBER_WORDS
-        )
-    if not any(
-        word in _ONES or word in _TENS or word in {"hundred", "thousand", "million", "billion"}
-        for word in words
-    ):
-        return None
-    total = current = 0
-    for word in words:
-        if word in {"and", "a"}:
-            continue
-        if word in _ONES:
-            current += _ONES[word]
-        elif word in _TENS:
-            current += _TENS[word]
-        elif word == "hundred":
-            current = max(current, 1) * 100
-        else:
-            scale = {"thousand": 1_000, "million": 1_000_000, "billion": 1_000_000_000}[word]
-            total += max(current, 1) * scale
-            current = 0
-    value = total + current
-    return value if 0 <= value < 1_000_000_000 else None
-
-
 def _revision_number_value(tokens):
     return numeral_value(token.text for token in sorted(tokens, key=lambda item: item.i))
 
@@ -181,15 +60,6 @@ def fallback_source(text):
     doc = _analyze(text)
     spans = [(ent.start, ent.end) for ent in doc.ents if ent.label_ == "CARDINAL"]
     return [_revision_source_token(token) for token in doc], spans
-
-
-# will marks future tense; would stays unexpressed.
-_NOT_MODAL = frozenset({"will", "would"})
-
-
-def _degree(token):
-    degree = token.morph.get("Degree")
-    return {"Cmp": "comparative", "Sup": "superlative"}.get(degree[0] if degree else "", "none")
 
 
 def _adverb(child):
@@ -207,76 +77,6 @@ def _adverb(child):
     )
 
 
-def _revision_clause_head(token):
-    if token.dep_ in {"aux", "auxpass"}:
-        return False
-    return token.pos_ == "VERB" or token.lemma_.lower() == "be" and token.pos_ in {"AUX", "VERB"}
-
-
-def _belongs_to(token, root):
-    """True when `root` is the nearest clause head above `token`."""
-    while token.head.i != token.i:
-        token = token.head
-        if token.i == root.i:
-            return True
-        if _revision_clause_head(token):
-            return False
-    return False
-
-
-def _revision_mood_tam_kind(root, sentence, main):
-    children = list(root.children)
-    voice = "passive" if any(child.dep_ == "nsubjpass" for child in children) else "active"
-    auxiliaries = [child for child in children if child.dep_ in {"aux", "auxpass"}]
-    finite = next((child for child in auxiliaries if child.morph.get("VerbForm") == ["Fin"]), root)
-    has_will = any(
-        child.lemma_.lower() == "will" or child.text.lower() == "wo" for child in auxiliaries
-    )
-    tense = "future" if has_will else UNSPECIFIED
-    if not has_will and finite.tag_ != "MD" and finite.morph.get("VerbForm") == ["Fin"]:
-        raw = _morph_value(finite, "Tense", {"past", "pres"})
-        tense = {"past": "past", "pres": "present"}.get(raw, UNSPECIFIED)
-    has_have = any(child.lemma_.lower() == "have" for child in auxiliaries)
-    perfect_be = any(child.lemma_.lower() == "be" and child.tag_ == "VBN" for child in auxiliaries)
-    perfect = has_have and (root.tag_ == "VBN" or root.tag_ == "VBG" and perfect_be)
-    progressive = root.tag_ == "VBG" and any(child.lemma_.lower() == "be" for child in auxiliaries)
-    subject = next((child for child in children if child.dep_ in {"nsubj", "nsubjpass"}), None)
-    inversion = bool(
-        subject and (root.i < subject.i or any(aux.i < subject.i for aux in auxiliaries))
-    )
-    interrogative = main and (
-        sentence.text.rstrip().endswith("?")
-        or inversion
-        or any(
-            token.tag_ in {"WP", "WRB", "WDT"} and _belongs_to(token, root) for token in sentence
-        )
-    )
-    imperative = (
-        main
-        and root.tag_ == "VB"
-        and subject is None
-        and all(aux.lemma_.lower() == "do" for aux in auxiliaries)
-        and not interrogative
-    )
-    mood = "interrogative" if interrogative else "imperative" if imperative else "declarative"
-    expletive = any(child.dep_ == "expl" for child in children)
-    if root.lemma_.lower() == "be":
-        kind = (
-            "existential"
-            if expletive
-            else (
-                "equational"
-                if any(child.dep_ in {"attr", "acomp"} for child in children)
-                else "locative"
-                if any(child.dep_ == "prep" for child in children)
-                else "equational"
-            )
-        )
-    else:
-        kind = "existential" if expletive else "verbal"
-    return children, voice, tense, perfect, progressive, mood, kind
-
-
 _NAME_ENTITIES = frozenset({"GPE", "PERSON", "ORG", "LOC", "FAC", "NORP"})
 _NP_DEPS = frozenset(
     {"det", "amod", "compound", "nummod", "quantmod", "poss", "nmod:poss", "prep", "predet"}
@@ -291,7 +91,7 @@ class _SentenceBuilder:
     def __init__(self, sent, source):
         self.sent = sent
         self.source = source
-        self.clause_heads = {token for token in sent if _revision_clause_head(token)}
+        self.clause_heads = {token for token in sent if GrammarAnalyzer.is_clause_head(token)}
         self.cache = {}
         self.numeral_spans = [(ent.start, ent.end) for ent in sent.ents if ent.label_ == "CARDINAL"]
         self._absorb_numeral_conjunctions()
@@ -366,7 +166,7 @@ class _SentenceBuilder:
     def build_clause(self, root, main=False):
         if root.i in self.cache:
             return self.cache[root.i]
-        children, voice, tense, perfect, progressive, mood, kind = _revision_mood_tam_kind(
+        children, voice, tense, perfect, progressive, mood, kind = GrammarAnalyzer.analyze_clause(
             root, self.sent, main
         )
 
@@ -448,7 +248,9 @@ class _SentenceBuilder:
         modals = [
             Modifier(child.text, child.lemma_.lower(), "modal", child.pos_, indices=(child.i,))
             for child in children
-            if child.dep_ == "aux" and child.tag_ == "MD" and child.lemma_.lower() not in _NOT_MODAL
+            if child.dep_ == "aux"
+            and child.tag_ == "MD"
+            and child.lemma_.lower() not in GrammarAnalyzer.NOT_MODAL
         ]
         clause = Clause(
             predicate=root.lemma_.lower(),
@@ -504,8 +306,8 @@ class _SentenceBuilder:
             return NounPhrase(token.lemma_.lower(), pos=token.pos_, surface=_original(token))
         seen.add(token.i)
         pron_types = set(token.morph.get("PronType"))
-        person = _morph_value(token, "Person", {"1", "2", "3"})
-        raw_number = _morph_value(token, "Number", {"sing", "plur"})
+        person = GrammarAnalyzer.morph_value(token, "Person", {"1", "2", "3"})
+        raw_number = GrammarAnalyzer.morph_value(token, "Number", {"sing", "plur"})
         number = {"sing": "singular", "plur": "plural"}.get(raw_number, UNSPECIFIED)
         if "Dem" in pron_types:
             np_kind = "demonstrative_pronoun" if token.pos_ == "PRON" else "noun"
@@ -544,7 +346,9 @@ class _SentenceBuilder:
                 None,
             )
             definite = (
-                _morph_value(determiner, "Definite", {"def", "ind"}) if determiner else UNSPECIFIED
+                GrammarAnalyzer.morph_value(determiner, "Definite", {"def", "ind"})
+                if determiner
+                else UNSPECIFIED
             )
             definiteness = {"def": "definite", "ind": "indefinite"}.get(definite, UNSPECIFIED)
             if any(
@@ -556,7 +360,7 @@ class _SentenceBuilder:
                 definiteness = UNSPECIFIED
         case_values = token.morph.get("Case")
         case = case_values[0].lower() if case_values else UNSPECIFIED
-        gender = _morph_value(token, "Gender", {"masc", "fem", "neut", "com"})
+        gender = GrammarAnalyzer.morph_value(token, "Gender", {"masc", "fem", "neut", "com"})
         foreign = {
             item.i
             for child in token.children
@@ -568,7 +372,7 @@ class _SentenceBuilder:
         number_tokens = [
             item
             for item in own_tokens
-            if (parts := item.text.lower().replace("-", " ").split()) and parts[0] in _NUMBER_WORDS
+            if (parts := item.text.lower().replace("-", " ").split()) and is_number_word(parts[0])
         ]
         digit_tokens = [item for item in own_tokens if any(char.isdigit() for char in item.text)]
         numeral_value = None if digit_tokens else _revision_number_value(number_tokens)
@@ -665,7 +469,7 @@ class _SentenceBuilder:
                     any(char.isdigit() for char in child.text),
                     sub_modifiers,
                     self._indices(child),
-                    _degree(child),
+                    GrammarAnalyzer.degree(child),
                 )
             )
         for digit_token in digit_tokens:
@@ -789,7 +593,7 @@ class _SentenceBuilder:
             demonstrative_index=demonstrative_index,
             predeterminers=predeterminers,
             adverbs=adverbs,
-            degree=_degree(token),
+            degree=GrammarAnalyzer.degree(token),
         )
 
     def _is_plain_np(self, token):

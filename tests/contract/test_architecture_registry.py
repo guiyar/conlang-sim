@@ -10,11 +10,11 @@ from conlang.languages.austronesian.catalog import CATALOG
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_architecture_core_has_no_profile_imports_and_only_parser_imports_spacy():
+def test_architecture_core_has_no_profile_imports_and_only_english_parser_imports_spacy():
     core = ROOT / "conlang" / "core"
     spacy_imports = []
     profile_imports = []
-    for path in core.glob("*.py"):
+    for path in core.rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -24,10 +24,10 @@ def test_architecture_core_has_no_profile_imports_and_only_parser_imports_spacy(
             else:
                 continue
             if any(name == "spacy" or name.startswith("spacy.") for name in names):
-                spacy_imports.append(path.name)
+                spacy_imports.append(path.relative_to(core).as_posix())
             if any(name.startswith("conlang.languages") for name in names):
-                profile_imports.append(path.name)
-    assert spacy_imports == ["parser.py"]
+                profile_imports.append(path.relative_to(core).as_posix())
+    assert spacy_imports == ["parsing/english.py"]
     assert profile_imports == []
 
 

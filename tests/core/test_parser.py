@@ -1,7 +1,7 @@
 import pytest
 from conftest import PARSER_PROBLEM
 
-from conlang.core.parser import parse, parser_versions
+from conlang.core.parser import numeral_value, parse, parser_versions
 
 pytestmark = pytest.mark.skipif(
     PARSER_PROBLEM is not None, reason=PARSER_PROBLEM or "pinned parser unavailable"
@@ -46,6 +46,12 @@ def test_parser_versions_are_pinned():
     versions = parser_versions()
     assert versions["spacy"].startswith("3.8.")
     assert versions["model"].startswith("3.8.0")
+
+
+def test_numeral_value_remains_available_from_parser_module():
+    assert numeral_value(["Twenty-one"]) == 21
+    assert numeral_value(["three", "hundred", "and", "five"]) == 305
+    assert numeral_value(["one", "billion"]) is None
 
 
 def test_weak_parser_cases_remain_robust():
