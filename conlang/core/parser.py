@@ -14,6 +14,8 @@ from .ir import (
     PostModifier,
     SentenceIR,
 )
+from .parsing.clause_builder import ClauseBuilder
+from .parsing.context import ParseContext
 from .parsing.english import EnglishParser
 from .parsing.grammar import GrammarAnalyzer
 from .parsing.numeral import is_number_word, numeral_value
@@ -621,10 +623,12 @@ def parse(text):
     doc = _analyze(text)
     sentences = []
     for sent in doc.sents:
-        builder = _SentenceBuilder(sent)
-        source = builder.source
+        context = ParseContext.from_sentence(sent)
+        builder = ClauseBuilder(context)
+        source = context.source
         main_root = sent.root
-        clause_heads = builder.clause_heads
+        clause_heads = context.clause_heads
+        numeral_spans = context.numeral_spans
         root_fallback = False
         if main_root not in clause_heads and clause_heads:
             main_root = min(clause_heads, key=lambda token: (token.i, token.dep_ == "relcl"))
@@ -639,7 +643,7 @@ def parse(text):
                         [],
                         [],
                         list(source.values()),
-                        builder.numeral_spans,
+                        numeral_spans,
                     )
                 )
                 continue
@@ -654,7 +658,7 @@ def parse(text):
                     ["No verbal or be root found; source tokens use conlang lexical fallback."],
                     fragment,
                     list(source.values()),
-                    builder.numeral_spans,
+                    numeral_spans,
                 )
             )
             continue
@@ -671,8 +675,6 @@ def parse(text):
                 )
             )
         sentences.append(
-            SentenceIR(
-                clause, _span_text(sent), rules, [], list(source.values()), builder.numeral_spans
-            )
+            SentenceIR(clause, _span_text(sent), rules, [], list(source.values()), numeral_spans)
         )
     return sentences
