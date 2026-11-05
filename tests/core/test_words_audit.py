@@ -4,7 +4,14 @@ import pytest
 
 from conlang.core.audit import AuditedIR
 from conlang.core.base import Translator
-from conlang.core.ir import Argument, Clause, NounPhrase, SentenceIR
+from conlang.core.ir import (
+    Argument,
+    Clause,
+    ClauseLink,
+    NounPhrase,
+    PostModifier,
+    SentenceIR,
+)
 from conlang.core.registry import discover_languages
 from conlang.core.words import Morpheme, SurfaceEdit, SurfaceInsertion, SurfaceResult, Word
 
@@ -82,6 +89,40 @@ def test_audit_accepts_new_structural_ir_fields_without_feature_declarations():
     _ = audited.value.clause.arguments[0].np.pos
     _ = audited.value.clause.arguments[0].np.numeral_value
     _ = audited.value.clause.links
+    assert audited.passes(set())
+
+
+def test_audit_normalizes_nested_np_and_clause_link_paths():
+    source = SentenceIR(
+        Clause(
+            arguments=[
+                Argument(
+                    "subject",
+                    "other",
+                    NounPhrase(
+                        "cup",
+                        post_modifiers=[
+                            PostModifier("prep", "of", NounPhrase("tea", definiteness="definite"))
+                        ],
+                    ),
+                )
+            ],
+            links=[ClauseLink("complement", None, Clause(tense="past"))],
+        ),
+        "cup of tea",
+    )
+    audited = AuditedIR(source)
+    _ = audited.value.clause.arguments[0].np.post_modifiers[0].np.definiteness
+    assert audited.passes({"np.definiteness"})
+    assert not audited.passes(set())
+
+    audited = AuditedIR(source)
+    _ = audited.value.clause.links[0].clause.tense
+    assert audited.passes({"clause.tense"})
+    assert not audited.passes(set())
+
+    audited = AuditedIR(source)
+    _ = audited.value.clause.arguments[0].np.post_modifiers[0].adposition
     assert audited.passes(set())
 
 

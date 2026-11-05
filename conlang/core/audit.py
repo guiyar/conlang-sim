@@ -1,24 +1,108 @@
 """Track intermediate-representation field paths read during realization."""
 
-from dataclasses import is_dataclass
+import re
+from dataclasses import dataclass, is_dataclass
 
 from .ir import STRUCTURAL_FIELDS
 
-_LINK_PREFIXES = ("clause.links[]", "np.post_modifiers[].link")
+
+@dataclass(frozen=True)
+class _FieldPath:
+    parts: tuple[str, ...]
+
+    @classmethod
+    def parse(cls, path):
+        parts = re.findall(r"[^.\[\]]+|\[\d*\]", path)
+        return cls(tuple("[]" if part.startswith("[") else part for part in parts))
+
+    def starts_with(self, prefix):
+        return self.parts[: len(prefix)] == prefix
+
+    def replace_prefix(self, prefix, replacement):
+        return _FieldPath(replacement + self.parts[len(prefix) :])
+
+    def __str__(self):
+        path = ""
+        for part in self.parts:
+            if part.startswith("["):
+                path += part
+            else:
+                path += ("." if path else "") + part
+        return path
 
 
-def _rebase_clause(path):
-    """Rewrite paths inside a linked clause as if they were read from a top-level clause."""
-    for prefix in _LINK_PREFIXES:
-        if f"{prefix}.clause." in path:
-            return "clause." + path.rsplit(f"{prefix}.clause.", 1)[1]
-        if f"{prefix}.marker." in path:
-            return "source_token." + path.rsplit(f"{prefix}.marker.", 1)[1]
-        if path.endswith(f"{prefix}.marker"):
-            return "clause_link.marker"
-        if f"{prefix}." in path:
-            return "clause_link." + path.rsplit(f"{prefix}.", 1)[1]
+@dataclass(frozen=True)
+class _PathRule:
+    prefix: tuple[str, ...]
+    replacement: tuple[str, ...]
+
+
+def _apply_rules(path, rules):
+    for rule in rules:
+        while path.starts_with(rule.prefix):
+            path = path.replace_prefix(rule.prefix, rule.replacement)
     return path
+
+
+_LINK_RULES = (
+    _PathRule(("post_modifier", "link", "clause"), ("clause",)),
+    _PathRule(("clause", "links", "[]", "clause"), ("clause",)),
+    _PathRule(("np", "post_modifiers", "[]", "link", "clause"), ("clause",)),
+    _PathRule(("clause", "links", "[]", "marker"), ("source_token",)),
+    _PathRule(("np", "post_modifiers", "[]", "link", "marker"), ("source_token",)),
+    _PathRule(("clause", "links", "[]"), ("clause_link",)),
+    _PathRule(("np", "post_modifiers", "[]", "link"), ("clause_link",)),
+    _PathRule(("post_modifier", "link"), ("clause_link",)),
+)
+
+_PATH_RULES = (
+    _PathRule(("clause", "arguments", "[]", "np", "source_tokens", "[]"), ("source_token",)),
+    _PathRule(("clause", "arguments", "[]", "source_tokens", "[]"), ("source_token",)),
+    _PathRule(("clause", "arguments", "[]", "np"), ("np",)),
+    _PathRule(("np", "post_modifiers", "[]", "np"), ("np",)),
+    _PathRule(("np", "coordinated", "[]", "np"), ("np",)),
+    _PathRule(("np", "coordinated", "[]", "conj"), ("source_token",)),
+    _PathRule(("np", "coordinated", "[]"), ("coordination",)),
+    _PathRule(("np", "post_modifiers", "[]"), ("post_modifier",)),
+    _PathRule(("clause", "adverbs", "[]"), ("modifier",)),
+    _PathRule(("np", "predeterminers", "[]"), ("modifier",)),
+    _PathRule(("np", "adverbs", "[]"), ("modifier",)),
+    _PathRule(("clause", "modals", "[]"), ("modifier",)),
+    _PathRule(("modifier", "sub_modifiers", "[]"), ("modifier",)),
+    _PathRule(("clause", "arguments", "[]"), ("argument",)),
+    _PathRule(("clause", "source_tokens", "[]"), ("source_token",)),
+    _PathRule(("np", "source_tokens", "[]"), ("source_token",)),
+    _PathRule(("source_tokens", "[]"), ("source_token",)),
+    _PathRule(("np", "kind"), ("np", "head", "kind")),
+    _PathRule(("np", "person"), ("np", "pronoun", "person")),
+    _PathRule(("np", "gender"), ("np", "pronoun", "gender")),
+    _PathRule(("np", "case"), ("np", "pronoun", "case")),
+)
+
+
+def _normalize_path(path):
+    field_path = _FieldPath.parse(path)
+    marker_paths = {
+        ("clause", "links", "[]", "marker"),
+        ("np", "post_modifiers", "[]", "link", "marker"),
+    }
+    if field_path.parts in marker_paths:
+        field_path = _FieldPath(("clause_link", "marker"))
+    else:
+        for _ in range(len(field_path.parts) + 1):
+            previous = field_path
+            field_path = _apply_rules(field_path, _PATH_RULES)
+            marker_prefix = ("post_modifier", "link", "marker")
+            if field_path.starts_with(marker_prefix):
+                suffix = field_path.parts[len(marker_prefix) :]
+                field_path = _FieldPath(
+                    ("source_token",) + suffix if suffix else ("clause_link", "marker")
+                )
+            else:
+                field_path = _apply_rules(field_path, _LINK_RULES)
+            if field_path == previous:
+                break
+    return str(field_path)
 
 
 class _Proxy:
@@ -77,30 +161,7 @@ class AuditedIR:
                 continue
             if path in STRUCTURAL_FIELDS:
                 continue
-            normalized = _rebase_clause(path)
-            normalized = normalized.replace(
-                "clause.arguments[].np.source_tokens[].", "source_token."
-            )
-            normalized = normalized.replace("clause.arguments[].source_tokens[].", "source_token.")
-            normalized = normalized.replace("clause.arguments[].np.", "np.")
-            normalized = normalized.replace("np.post_modifiers[].np.", "np.")
-            normalized = normalized.replace("np.coordinated[].np.", "np.")
-            normalized = normalized.replace("np.coordinated[].conj.", "source_token.")
-            normalized = normalized.replace("np.coordinated[].", "coordination.")
-            normalized = normalized.replace("np.post_modifiers[].", "post_modifier.")
-            normalized = normalized.replace("clause.adverbs[].", "modifier.")
-            normalized = normalized.replace("np.predeterminers[].", "modifier.")
-            normalized = normalized.replace("np.adverbs[].", "modifier.")
-            normalized = normalized.replace("clause.modals[].", "modifier.")
-            normalized = normalized.replace("modifier.sub_modifiers[].", "modifier.")
-            normalized = normalized.replace("clause.arguments[].", "argument.")
-            normalized = normalized.replace("clause.source_tokens[].", "source_token.")
-            normalized = normalized.replace("np.source_tokens[].", "source_token.")
-            normalized = normalized.replace("source_tokens[].", "source_token.")
-            normalized = normalized.replace("np.kind", "np.head.kind")
-            normalized = normalized.replace("np.person", "np.pronoun.person")
-            normalized = normalized.replace("np.gender", "np.pronoun.gender")
-            normalized = normalized.replace("np.case", "np.pronoun.case")
+            normalized = _normalize_path(path)
             if normalized in STRUCTURAL_FIELDS:
                 continue
             if not any(
