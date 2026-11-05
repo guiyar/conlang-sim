@@ -37,21 +37,44 @@ class Word:
 
     @property
     def segments(self):
-        output: list[str] = []
+        return tuple(
+            self.morphemes[morpheme].segments[segment]
+            for morpheme, segment in self._segment_layout()
+        )
+
+    def _morphology_groups(self):
+        groups: list[tuple[int, ...]] = []
         index = 0
         while index < len(self.morphemes):
             morpheme = self.morphemes[index]
             following = self.morphemes[index + 1] if index + 1 < len(self.morphemes) else None
             if morpheme.kind == "root" and following is not None and following.kind == "infix":
-                position = following.position if following.position is not None else 1
-                output.extend(morpheme.segments[:position])
-                output.extend(following.segments)
-                output.extend(morpheme.segments[position:])
+                groups.append((index, index + 1))
                 index += 2
             else:
-                output.extend(morpheme.segments)
+                groups.append((index,))
                 index += 1
-        return tuple(output)
+        return tuple(groups)
+
+    def _segment_layout(self):
+        layout: list[tuple[int, int]] = []
+        for group in self._morphology_groups():
+            if len(group) == 2:
+                root_index, infix_index = group
+                root = self.morphemes[root_index]
+                infix = self.morphemes[infix_index]
+                position = infix.position if infix.position is not None else 1
+                split = min(position, len(root.segments))
+                layout.extend((root_index, local) for local in range(split))
+                layout.extend((infix_index, local) for local in range(len(infix.segments)))
+                layout.extend((root_index, local) for local in range(split, len(root.segments)))
+            else:
+                morpheme_index = group[0]
+                layout.extend(
+                    (morpheme_index, local)
+                    for local in range(len(self.morphemes[morpheme_index].segments))
+                )
+        return layout
 
     def add_prefix(self, morpheme):
         self.morphemes.insert(0, morpheme)
@@ -98,28 +121,7 @@ class Word:
             if operation == "insert":
                 insertions.extend((start, segment) for segment in segments[target_start:target_end])
         for position, segment in reversed(insertions):
-            layout: list[tuple[int, int]] = []
-            index = 0
-            while index < len(self.morphemes):
-                morpheme = self.morphemes[index]
-                following = self.morphemes[index + 1] if index + 1 < len(self.morphemes) else None
-                if morpheme.kind == "root" and following is not None and following.kind == "infix":
-                    infix_position = following.position if following.position is not None else 1
-                    layout.extend(
-                        (index, local)
-                        for local in range(min(infix_position, len(morpheme.segments)))
-                    )
-                    layout.extend((index + 1, local) for local in range(len(following.segments)))
-                    layout.extend(
-                        (index, local)
-                        for local in range(
-                            min(infix_position, len(morpheme.segments)), len(morpheme.segments)
-                        )
-                    )
-                    index += 2
-                else:
-                    layout.extend((index, local) for local in range(len(morpheme.segments)))
-                    index += 1
+            layout = self._segment_layout()
             if position < len(layout):
                 morpheme_index, local_index = layout[position]
             elif layout:
@@ -140,38 +142,32 @@ class Word:
 
     def segmented(self):
         parts = []
-        index = 0
-        while index < len(self.morphemes):
-            morpheme = self.morphemes[index]
-            following = self.morphemes[index + 1] if index + 1 < len(self.morphemes) else None
-            if morpheme.kind == "root" and following is not None and following.kind == "infix":
-                position = following.position if following.position is not None else 1
+        for group in self._morphology_groups():
+            if len(group) == 2:
+                root = self.morphemes[group[0]]
+                infix = self.morphemes[group[1]]
+                position = infix.position if infix.position is not None else 1
                 part = (
-                    "".join(morpheme.segments[:position])
+                    "".join(root.segments[:position])
                     + "<"
-                    + "".join(following.segments)
+                    + "".join(infix.segments)
                     + ">"
-                    + "".join(morpheme.segments[position:])
+                    + "".join(root.segments[position:])
                 )
                 parts.append(part)
-                index += 2
             else:
-                parts.append("".join(morpheme.segments))
-                index += 1
+                parts.append("".join(self.morphemes[group[0]].segments))
         return "-".join(parts)
 
     def gloss(self):
         parts = []
-        index = 0
-        while index < len(self.morphemes):
-            morpheme = self.morphemes[index]
-            following = self.morphemes[index + 1] if index + 1 < len(self.morphemes) else None
-            if morpheme.kind == "root" and following is not None and following.kind == "infix":
-                parts.append(f"{morpheme.gloss}<{following.gloss}>")
-                index += 2
+        for group in self._morphology_groups():
+            if len(group) == 2:
+                root = self.morphemes[group[0]]
+                infix = self.morphemes[group[1]]
+                parts.append(f"{root.gloss}<{infix.gloss}>")
             else:
-                parts.append(morpheme.gloss)
-                index += 1
+                parts.append(self.morphemes[group[0]].gloss)
         return "-".join(parts)
 
     @property

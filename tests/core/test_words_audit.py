@@ -82,14 +82,22 @@ def test_audit_accepts_new_structural_ir_fields_without_feature_declarations():
 
 
 def test_infix_follows_complete_onset_and_surface_is_cached():
-    word = Word([Morpheme(("k", "l", "a", "t"), "ROOT", "root")])
+    word = Word(
+        [
+            Morpheme(("p",), "PRE", "prefix"),
+            Morpheme(("k", "l", "a", "t"), "ROOT", "root"),
+            Morpheme(("s",), "PL", "suffix"),
+        ]
+    )
     word.add_infix(Morpheme(("u", "m"), "AF", "infix"), 2)
-    assert "".join(word.segments) == "klumat"
+    assert "".join(word.segments) == "pklumats"
+    assert word.segmented() == "p-kl<um>at-s"
+    assert word.gloss() == "PRE-ROOT<AF>-PL"
     calls = []
     first = word.surface(lambda segments, notes, vowel: calls.append(1) or segments)
     assert word.surface(lambda segments, notes, vowel: calls.append(1) or segments) == first
     assert len(calls) == 1
-    assert word.gloss() == "ROOT<AF>"
+    assert word.gloss() == "PRE-ROOT<AF>-PL"
 
 
 def test_invalid_infix_fallback_preserves_morpheme_sources():
